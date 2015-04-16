@@ -73,7 +73,7 @@ connect(Parent, #server{host = Host, port = Port}, N) ->
     end.
 
 loop(N, Client, Topic) ->
-	Timeout = 10000 + random:uniform(10000),
+	Timeout = 5000 + random:uniform(5000),
     receive
         {publish, Topic, _Payload} ->
             %io:format("Message Received from ~s: ~p~n", [Topic, Payload])
@@ -85,7 +85,7 @@ loop(N, Client, Topic) ->
 	end.
 
 send(N, Client, Topic) ->
-    Payload = list_to_binary([integer_to_list(N), ":", <<"Hello, eMQTTD!">>]),
+    Payload = list_to_binary([integer_to_list(N), ":", <<"Hello, emqttd!">>]),
 	emqttc:publish(Client, Topic, Payload).
 	 
 client_id(Host, N) ->
