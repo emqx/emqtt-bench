@@ -1,6 +1,6 @@
 {application, emqttd_benchmark,
  [
-  {description, "eMQTTD Benchmark"},
+  {description, "MQTT Broker Benchmark"},
   {vsn, "0.1"},
   {registered, []},
   {applications, [
