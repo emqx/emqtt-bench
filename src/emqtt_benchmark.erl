@@ -95,17 +95,18 @@ connect(Parent, N, PubSub, Opts) ->
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{client_id, ClientId} | mqtt_opts(Opts)],
     TcpOpts  = tcp_opts(Opts),
+    AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	case emqttc:start_link(MqttOpts, TcpOpts) of
     {ok, Client} ->
         Parent ! {connected, N, Client},
         case PubSub of
             sub ->
-                subscribe(Client, [{seq, N}, {client_id, ClientId} | Opts]);
+                subscribe(Client, AllOpts);
             pub ->
                Interval = proplists:get_value(interval_of_msg, Opts),
                timer:send_interval(Interval, publish)
         end,
-        loop(N, Client, PubSub, Opts);
+        loop(N, Client, PubSub, AllOpts);
     {error, Error} ->
         io:format("client ~p connect error: ~p~n", [N, Error])
     end.
@@ -130,9 +131,8 @@ subscribe(Client, Opts) ->
 publish(Client, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
-    Topic   = proplists:get_value(topic, Opts),
     Payload = proplists:get_value(payload, Opts),
-    emqttc:publish(Client, bin(Topic), Payload, Flags).
+    emqttc:publish(Client, topic(Opts), Payload, Flags).
 
 mqtt_opts(Opts) ->
     [{logger, error}|mqtt_opts(Opts, [])].
