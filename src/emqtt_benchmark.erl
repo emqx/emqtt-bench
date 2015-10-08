@@ -73,7 +73,7 @@ print_stats(Uptime, Key) ->
     case Val == LastVal of
         false ->
             Tdiff = timer:now_diff(now(), Uptime) div 1000,
-            io:format("~s(~w): total=~w, rate=~w/sec~n",
+            io:format("~s(~w): total=~w, rate=~w(msg/sec)~n",
                         [Key, Tdiff, Val, Val - LastVal]),
             put({stats, Key}, Val);
         true  ->
