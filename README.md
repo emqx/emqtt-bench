@@ -2,7 +2,6 @@
 
 This is a simple MQTT benchmark tool written in Erlang. The main purpose of the tool is to benchmark how many concurrent connections a MQTT broker could support.
 
-
 ## Build first
 
 ```sh
@@ -74,13 +73,18 @@ For example, create 100 clients and each client publish messages at the rate of 
 ./emqtt_bench_pub -c 100 -I 10 -t bench/%i -s 256
 ```
 
+## Local interface
+
+```sh
+./emqtt_bench_pub --ifaddr 192.168.1.10
+./emqtt_bench_sub --ifaddr 192.168.2.10
+```
+
 ## Notice
 
-Usually, you should not set '-c' option more than 60000 for TCP ports limit on one interface.
-
+You should not set '-c' option more than 60K for TCP ports limit on one interface.
 
 ## Author
 
 Feng Lee <feng@emqtt.io>
-
 
