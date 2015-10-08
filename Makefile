@@ -4,7 +4,6 @@ ERL=erl
 BEAMDIR=./deps/*/ebin ./ebin
 REBAR=./rebar
 
-#update-deps 
 all: get-deps compile xref
 
 get-deps:

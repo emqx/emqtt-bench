@@ -1,0 +1,11 @@
+{application, emqtt_benchmark,
+ [
+  {description, "Erlang MQTT Broker Benchmark"},
+  {vsn, "0.5"},
+  {registered, []},
+  {applications, [kernel,
+                  stdlib,
+                  lager,
+                  emqttc]},
+  {env, []}
+ ]}.
