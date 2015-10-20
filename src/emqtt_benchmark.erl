@@ -92,6 +92,7 @@ run(Parent, N, PubSub, Opts) ->
     
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
+    random:seed(os:timestamp()),
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{client_id, ClientId} | mqtt_opts(Opts)],
     TcpOpts  = tcp_opts(Opts),
