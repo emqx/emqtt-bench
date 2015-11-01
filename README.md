@@ -29,7 +29,7 @@ Usage: emqtt_bench_sub [--help <help>] [-h [<host>]] [-p [<port>]]
   -P, --password   password for connecting to server
   -k, --keepalive  keep alive in seconds [default: 300]
   -C, --clean      clean session [default: true]
-  --ifaddr         loacal ipaddress or interface address
+  --ifaddr         local ipaddress or interface address
 ```
 
 For example, create 50K concurrent clients at the arrival rate of 100/sec: 
@@ -64,7 +64,7 @@ Usage: emqtt_bench_pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -r, --retain           retain message [default: false]
   -k, --keepalive        keep alive in seconds [default: 300]
   -C, --clean            clean session [default: true]
-  --ifaddr               loacal ipaddress or interface address
+  --ifaddr               local ipaddress or interface address
 ```
 
 For example, create 100 clients and each client publish messages at the rate of 100 msg/sec.
