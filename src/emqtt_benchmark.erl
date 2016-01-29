@@ -1,5 +1,5 @@
 %%%-----------------------------------------------------------------------------
-%%% @Copyright (C) 2014-2015, Feng Lee <feng@emqtt.io>
+%%% @Copyright (C) 2014-2016, Feng Lee <feng@emqtt.io>
 %%%
 %%% Permission is hereby granted, free of charge, to any person obtaining a copy
 %%% of this software and associated documentation files (the "Software"), to deal
@@ -38,7 +38,7 @@ start(PubSub, Opts) ->
     prepare(), init(),
     spawn(?MODULE, run, [self(), PubSub, Opts]),
     timer:send_interval(1000, stats),
-    main_loop(now(), 0).
+    main_loop(os:timestamp(), 0).
 
 prepare() ->
     application:ensure_all_started(emqtt_benchmark).
@@ -72,7 +72,7 @@ print_stats(Uptime, Key) ->
     LastVal = get({stats, Key}),
     case Val == LastVal of
         false ->
-            Tdiff = timer:now_diff(now(), Uptime) div 1000,
+            Tdiff = timer:now_diff(os:timestamp(), Uptime) div 1000,
             io:format("~s(~w): total=~w, rate=~w(msg/sec)~n",
                         [Key, Tdiff, Val, Val - LastVal]),
             put({stats, Key}, Val);
@@ -127,13 +127,13 @@ loop(N, Client, PubSub, Opts) ->
 
 subscribe(Client, Opts) ->
     Qos = proplists:get_value(qos, Opts),
-    emqttc:subscribe(Client, topic(Opts), Qos).
+    emqttc:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]).
 
 publish(Client, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
-    emqttc:publish(Client, topic(Opts), Payload, Flags).
+    emqttc:publish(Client, topic_opt(Opts), Payload, Flags).
 
 mqtt_opts(Opts) ->
     [{logger, error}|mqtt_opts(Opts, [])].
@@ -175,8 +175,22 @@ client_id(PubSub, N, Opts) ->
     list_to_binary(lists:concat([Prefix, "_bench_", atom_to_list(PubSub),
                                     "_", N, "_", random:uniform(16#FFFFFFFF)])).
 
-topic(Opts) ->
-    Topic = bin(proplists:get_value(topic, Opts)),
+topics_opt(Opts) ->
+    Topics = topics_opt(Opts, []),
+    io:format("Topics: ~p~n", [Topics]),
+    [feed_var(bin(Topic), Opts) || Topic <- Topics].
+
+topics_opt([], Acc) ->
+    Acc;
+topics_opt([{topic, Topic}|Topics], Acc) ->
+    topics_opt(Topics, [Topic | Acc]);
+topics_opt([_Opt|Topics], Acc) ->
+    topics_opt(Topics, Acc).
+
+topic_opt(Opts) ->
+    feed_var(bin(proplists:get_value(topic, Opts)), Opts).
+
+feed_var(Topic, Opts) when is_binary(Topic) ->
     Props = [{Var, bin(proplists:get_value(Key, Opts))} || {Key, Var} <-
                 [{seq, <<"%i">>}, {client_id, <<"%c">>}, {username, <<"%u">>}]],
     lists:foldl(fun({_Var, undefined}, Acc) -> Acc;
