@@ -31,6 +31,12 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean session"},
+         {ssl, $S, "ssl", {boolean, false},
+          "ssl socoket for connecting to server"},
+         {certfile, undefined, "certfile", string,
+          "client certificate for authentication, if required by server"},
+         {keyfile, undefined, "keyfile", string,
+          "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
         ]).

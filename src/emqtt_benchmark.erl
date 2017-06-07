@@ -136,7 +136,8 @@ publish(Client, Opts) ->
     emqttc:publish(Client, topic_opt(Opts), Payload, Flags).
 
 mqtt_opts(Opts) ->
-    [{logger, error}|mqtt_opts(Opts, [])].
+    SslOpts = ssl_opts(Opts),
+    [{logger, error}|mqtt_opts([SslOpts|Opts], [])].
 mqtt_opts([], Acc) ->
     Acc;
 mqtt_opts([{host, Host}|Opts], Acc) ->
@@ -151,6 +152,12 @@ mqtt_opts([{keepalive, I}|Opts], Acc) ->
     mqtt_opts(Opts, [{keepalive, I}|Acc]);
 mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_sess, Bool}|Acc]);
+mqtt_opts([{ssl, true} | Opts], Acc) ->
+    mqtt_opts(Opts, [ssl|Acc]);
+mqtt_opts([{ssl, []} | Opts], Acc) ->
+    mqtt_opts(Opts, Acc);
+mqtt_opts([{ssl, SslOpts} | Opts], Acc) ->
+    mqtt_opts(Opts, [{ssl, SslOpts}|Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
@@ -163,6 +170,17 @@ tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     tcp_opts(Opts, [{ip, IpAddr}|Acc]);
 tcp_opts([_|Opts], Acc) ->
     tcp_opts(Opts, Acc).
+
+ssl_opts(Opts) ->
+    ssl_opts(Opts, []).
+ssl_opts([], Acc) ->
+    {ssl, Acc};
+ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
+    ssl_opts(Opts, [{keyfile, KeyFile}|Acc]);
+ssl_opts([{certfile, CertFile} | Opts], Acc) ->
+    ssl_opts(Opts, [{certfile, CertFile}|Acc]);
+ssl_opts([_|Opts], Acc) ->
+    ssl_opts(Opts, Acc).
 
 client_id(PubSub, N, Opts) ->
     Prefix =
