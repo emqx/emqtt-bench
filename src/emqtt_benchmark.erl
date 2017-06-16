@@ -154,6 +154,8 @@ mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_sess, Bool}|Acc]);
 mqtt_opts([{ssl, true} | Opts], Acc) ->
     mqtt_opts(Opts, [ssl|Acc]);
+mqtt_opts([{ssl, false} | Opts], Acc) ->
+    mqtt_opts(Opts, Acc);
 mqtt_opts([{ssl, []} | Opts], Acc) ->
     mqtt_opts(Opts, Acc);
 mqtt_opts([{ssl, SslOpts} | Opts], Acc) ->
