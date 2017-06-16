@@ -18,18 +18,19 @@ Usage: emqtt_bench_sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-k [<keepalive>]] [-C [<clean>]]
                        [--ifaddr <ifaddr>]
 
-  --help           help information
-  -h, --host       mqtt server hostname or IP address [default: localhost]
-  -p, --port       mqtt server port number [default: 1883]
-  -c, --count      max count of clients [default: 200]
-  -i, --interval   interval of connecting to the broker [default: 10]
-  -t, --topic      topic subscribe, support %u, %c, %i variables
-  -q, --qos        subscribe qos [default: 0]
-  -u, --username   username for connecting to server
-  -P, --password   password for connecting to server
-  -k, --keepalive  keep alive in seconds [default: 300]
-  -C, --clean      clean session [default: true]
-  --ifaddr         local ipaddress or interface address
+  --help             help information
+  -h, --host         mqtt server hostname or IP address [default: localhost]
+  -p, --port         mqtt server port number [default: 1883]
+  -c, --count        max count of clients [default: 200]
+  -n, --startnumber  start number [default: 0]
+  -i, --interval     interval of connecting to the broker [default: 10]
+  -t, --topic        topic subscribe, support %u, %c, %i variables
+  -q, --qos          subscribe qos [default: 0]
+  -u, --username     username for connecting to server
+  -P, --password     password for connecting to server
+  -k, --keepalive    keep alive in seconds [default: 300]
+  -C, --clean        clean session [default: true]
+  --ifaddr           local ipaddress or interface address
 ```
 
 For example, create 50K concurrent clients at the arrival rate of 100/sec: 
@@ -54,6 +55,7 @@ Usage: emqtt_bench_pub [--help <help>] [-h [<host>]] [-p [<port>]]
                          localhost]
   -p, --port             mqtt server port number [default: 1883]
   -c, --count            max count of clients [default: 200]
+  -n, --startnumber      start number [default: 0]
   -i, --interval         interval of connecting to the broker [default: 10]
   -I, --interval_of_msg  interval of publishing message(ms) [default: 1000]
   -u, --username         username for connecting to server
