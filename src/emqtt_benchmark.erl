@@ -38,7 +38,7 @@ start(PubSub, Opts) ->
     prepare(), init(),
     spawn(?MODULE, run, [self(), PubSub, Opts]),
     timer:send_interval(1000, stats),
-    main_loop(os:timestamp(), 0).
+    main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
 
 prepare() ->
     application:ensure_all_started(emqtt_benchmark).
@@ -86,7 +86,7 @@ run(Parent, PubSub, Opts) ->
 run(_Parent, 0, _PubSub, _Opts) ->
     done;
 run(Parent, N, PubSub, Opts) ->
-    spawn(?MODULE, connect, [Parent, N, PubSub, Opts]),
+    spawn(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts]),
 	timer:sleep(proplists:get_value(interval, Opts)),
 	run(Parent, N-1, PubSub, Opts).
     
@@ -154,6 +154,8 @@ mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_sess, Bool}|Acc]);
 mqtt_opts([{ssl, true} | Opts], Acc) ->
     mqtt_opts(Opts, [ssl|Acc]);
+mqtt_opts([{ssl, false} | Opts], Acc) ->
+    mqtt_opts(Opts, Acc);
 mqtt_opts([{ssl, []} | Opts], Acc) ->
     mqtt_opts(Opts, Acc);
 mqtt_opts([{ssl, SslOpts} | Opts], Acc) ->
