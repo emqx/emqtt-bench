@@ -11,6 +11,7 @@
           "mqtt server port number"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
+         {startnumber, $n, "startnumber", {integer, 0}, "start number"},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
          {topic, $t, "topic", string,
