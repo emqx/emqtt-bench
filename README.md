@@ -82,14 +82,14 @@ For example, create 100 clients and each client publish messages at the rate of 
 ./emqtt_bench_sub --ifaddr 192.168.2.10
 ```
 
-## One-way SSL socoket
+## One-way SSL socket
 
 ```sh
 ./emqtt_bench_sub -c 100 -i 10 -t bench/%i -p 8883 -S
 ./emqtt_bench_pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 -S
 ```
 
-## Two-way SSL socoket
+## Two-way SSL socket
 ```sh
 ./emqtt_bench_sub -c 100 -i 10 -t bench/%i -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
 ./emqtt_bench_pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
