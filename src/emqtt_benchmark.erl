@@ -29,6 +29,9 @@
 main(sub, Opts) ->
     start(sub, Opts);
 
+main(conn, Opts) ->
+    start(conn, Opts);
+
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
     Payload = iolist_to_binary([O || O <- lists:duplicate(Size, 0)]),
@@ -101,6 +104,7 @@ connect(Parent, N, PubSub, Opts) ->
     {ok, Client} ->
         Parent ! {connected, N, Client},
         case PubSub of
+            conn -> ok;
             sub ->
                 subscribe(Client, AllOpts);
             pub ->
