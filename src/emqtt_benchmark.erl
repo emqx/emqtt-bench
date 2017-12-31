@@ -107,6 +107,7 @@ connect(Parent, N, PubSub, Opts) ->
                Interval = proplists:get_value(interval_of_msg, Opts),
                timer:send_interval(Interval, publish)
         end,
+        garbage_collect(),
         loop(N, Client, PubSub, AllOpts);
     {error, Error} ->
         io:format("client ~p connect error: ~p~n", [N, Error])
