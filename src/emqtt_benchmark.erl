@@ -53,7 +53,7 @@ init() ->
 main_loop(Uptime, Count) ->
 	receive
 		{connected, _N, _Client} ->
-			io:format("conneted: ~w~n", [Count]),
+			io:format("connected: ~w~n", [Count]),
 			main_loop(Uptime, Count+1);
         stats ->
             print_stats(Uptime),
