@@ -1,6 +1,6 @@
 #! /usr/bin/env escript
 %% -*- erlang -*-
-%%! -pa ./ebin -pa deps/emqttc/ebin -pa deps/getopt/ebin -pa deps/gen_logger/ebin -pa deps/goldrush/ebin -pa deps/lager/ebin -smp true +K true +A 16 +P 200000 -env ERL_MAX_PORTS 100000 -env ERTS_MAX_PORTS 100000
+%%! -pa ./_build/default/lib/emqtt_benchmark/ebin/ -pa ./_build/default/lib/emqttc/ebin -pa ./_build/default/lib/getopt/ebin  -smp true +K true +A 16 +P 200000 -env ERL_MAX_PORTS 100000 -env ERTS_MAX_PORTS 100000
 
 -define(OPTS, [
          {help, undefined, "help", boolean,
