@@ -30,8 +30,15 @@ main(sub, Opts) ->
     start(sub, Opts);
 
 main(pub, Opts) ->
-    Size    = proplists:get_value(size, Opts),
-    Payload = iolist_to_binary([O || O <- lists:duplicate(Size, 0)]),
+    Payload = 
+        case proplists:get_value(replay, Opts) of
+            undefined ->
+                Size = proplists:get_value(size, Opts),
+                iolist_to_binary([O || O <- lists:duplicate(Size, 0)]);
+            ReplayFile ->
+                {ok, Payload0} = file:read_file(ReplayFile),
+                Payload0
+        end,
     start(pub, [{payload, Payload} | Opts]).
 
 start(PubSub, Opts) ->

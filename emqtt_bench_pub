@@ -39,7 +39,9 @@
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {replay, undefined, "replay", string,
+          "the replay file that contains MQTT payload"}
         ]).
 
 main(Argv) ->
