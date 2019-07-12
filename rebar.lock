@@ -1,8 +1,10 @@
+{"1.1.0",
 [{<<"emqtt">>,
   {git,"https://github.com/emqx/emqtt.git",
-       {ref,"cb531956fce494645b03e07c98e835fcf2755790"}},
+       {ref,"50e707b9fab8edf36b536416b23d2a81a1d453bd"}},
   0},
- {<<"getopt">>,
-  {git,"https://github.com/jcomellas/getopt.git",
-       {ref,"fbd210550677114a6c96cdf66e340eb248908d93"}},
-  0}].
+ {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
+[
+{pkg_hash,[
+ {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>}]}
+].
