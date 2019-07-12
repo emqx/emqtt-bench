@@ -1,0 +1,8 @@
+[{<<"emqtt">>,
+  {git,"https://github.com/emqx/emqtt.git",
+       {ref,"cb531956fce494645b03e07c98e835fcf2755790"}},
+  0},
+ {<<"getopt">>,
+  {git,"https://github.com/jcomellas/getopt.git",
+       {ref,"fbd210550677114a6c96cdf66e340eb248908d93"}},
+  0}].

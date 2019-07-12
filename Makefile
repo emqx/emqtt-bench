@@ -1,22 +1,19 @@
-.PHONY: test
+REBAR := rebar3
 
-ERL=erl
-BEAMDIR=./deps/*/ebin ./ebin
-REBAR=./rebar
-
-all: get-deps compile xref
-
-get-deps:
-	@$(REBAR) get-deps
-
-update-deps:
-	@$(REBAR) update-deps
+.PHONY: all
+all: compile
 
 compile:
-	@$(REBAR) compile
+	$(REBAR) compile
 
+.PHONY: clean
+clean: distclean
+
+.PHONY: distclean
+distclean:
+	@rm -rf _build erl_crash.dump rebar3.crashdump rebar.lock
+
+.PHONY: xref
 xref:
-	@$(REBAR) xref skip_deps=true
+	$(REBAR) xref
 
-clean:
-	@$(REBAR) clean
