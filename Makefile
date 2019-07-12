@@ -3,8 +3,12 @@ REBAR := rebar3
 .PHONY: all
 all: compile
 
-compile:
+compile: unlock
 	$(REBAR) compile
+
+.PHONY: unlock
+unlock:
+	$(REBAR) unlock
 
 .PHONY: clean
 clean: distclean
