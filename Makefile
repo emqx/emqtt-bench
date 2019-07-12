@@ -11,7 +11,7 @@ clean: distclean
 
 .PHONY: distclean
 distclean:
-	@rm -rf _build erl_crash.dump rebar3.crashdump rebar.lock
+	@rm -rf _build erl_crash.dump rebar3.crashdump rebar.lock emqtt_bench
 
 .PHONY: xref
 xref:

@@ -24,13 +24,15 @@
         , loop/4
         ]).
 
--define(PUB_OPTS, [
-         {help, undefined, "help", boolean,
+-define(PUB_OPTS,
+        [{help, undefined, "help", boolean,
           "help information"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
+         {version, $V, "version", {integer, 5},
+          "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},
@@ -53,7 +55,7 @@
          {keepalive, $k, "keepalive", {integer, 300},
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
-          "clean session"},
+          "clean start"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -64,13 +66,15 @@
           "local ipaddress or interface address"}
         ]).
 
--define(SUB_OPTS, [
-         {help, undefined, "help", boolean,
+-define(SUB_OPTS,
+        [{help, undefined, "help", boolean,
           "help information"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
+         {version, $V, "version", {integer, 5},
+          "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},
@@ -87,7 +91,7 @@
          {keepalive, $k, "keepalive", {integer, 300},
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
-          "clean session"},
+          "clean start"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -98,7 +102,9 @@
           "local ipaddress or interface address"}
         ]).
 
--define(TAB, eb_stats).
+-define(TAB, ?MODULE).
+-define(IDX_SENT, 1).
+-define(IDX_RECV, 2).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -163,11 +169,10 @@ prepare() ->
     application:ensure_all_started(emqtt_bench).
 
 init() ->
-    ets:new(?TAB, [public, named_table, {write_concurrency, true}]),
+    CRef = counters:new(4, [write_concurrency]),
+    ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
-    ets:insert(?TAB, {recv, 0}),
-    put({stats, sent}, 0),
-    ets:insert(?TAB, {sent, 0}).
+    put({stats, sent}, 0).
 
 main_loop(Uptime, Count) ->
 	receive
@@ -186,18 +191,30 @@ print_stats(Uptime) ->
     print_stats(Uptime, recv),
     print_stats(Uptime, sent).
 
-print_stats(Uptime, Key) ->
-    [{Key, Val}] = ets:lookup(?TAB, Key),
-    LastVal = get({stats, Key}),
-    case Val == LastVal of
+print_stats(Uptime, Name) ->
+    CurVal = get_counter(Name),
+    LastVal = get({stats, Name}),
+    case CurVal == LastVal of
         false ->
             Tdiff = timer:now_diff(os:timestamp(), Uptime) div 1000,
             io:format("~s(~w): total=~w, rate=~w(msg/sec)~n",
-                        [Key, Tdiff, Val, Val - LastVal]),
-            put({stats, Key}, Val);
-        true  ->
-            ok
+                        [Name, Tdiff, CurVal, CurVal - LastVal]),
+            put({stats, Name}, CurVal);
+        true -> ok
     end.
+
+get_counter(sent) ->
+    counters:get(cnt_ref(), ?IDX_SENT);
+get_counter(recv) ->
+    counters:get(cnt_ref(), ?IDX_RECV).
+
+inc_counter(sent) ->
+    counters:add(cnt_ref(), ?IDX_SENT, 1);
+inc_counter(recv) ->
+    counters:add(cnt_ref(), ?IDX_RECV, 1).
+
+-compile({inline, [cnt_ref/0]}).
+cnt_ref() -> persistent_term:get(?MODULE).
 
 run(Parent, PubSub, Opts) ->
     run(Parent, proplists:get_value(count, Opts), PubSub, Opts).
@@ -231,20 +248,25 @@ connect(Parent, N, PubSub, Opts) ->
             end,
             loop(N, Client, PubSub, AllOpts);
         {error, Error} ->
-            io:format("client ~p connect error: ~p~n", [N, Error])
-        end.
+            io:format("client(~w): connect error - ~p~n", [N, Error])
+    end.
 
 loop(N, Client, PubSub, Opts) ->
     receive
         publish ->
-            ok = publish(Client, Opts),
-            ets:update_counter(?TAB, sent, {2, 1}),
+            case publish(Client, Opts) of
+                ok -> inc_counter(sent);
+                {ok, _} ->
+                    inc_counter(sent);
+                {error, Reason} ->
+                    io:format("client(~w): publish error - ~p~n", [N, Reason])
+            end,
             loop(N, Client, PubSub, Opts);
         {publish, _Publish} ->
-            ets:update_counter(?TAB, recv, {2, 1}),
+            inc_counter(recv),
             loop(N, Client, PubSub, Opts);
         {'EXIT', Client, Reason} ->
-            io:format("client ~w EXIT: ~p~n", [N, Reason])
+            io:format("client(~w): EXIT for ~p~n", [N, Reason])
 	end.
 
 subscribe(Client, Opts) ->
@@ -266,6 +288,12 @@ mqtt_opts([{host, Host}|Opts], Acc) ->
     mqtt_opts(Opts, [{host, Host}|Acc]);
 mqtt_opts([{port, Port}|Opts], Acc) ->
     mqtt_opts(Opts, [{port, Port}|Acc]);
+mqtt_opts([{version, 3}|Opts], Acc) ->
+    mqtt_opts(Opts, [{proto_ver, v3}|Acc]);
+mqtt_opts([{version, 4}|Opts], Acc) ->
+    mqtt_opts(Opts, [{proto_ver, v4}|Acc]);
+mqtt_opts([{version, 5}|Opts], Acc) ->
+    mqtt_opts(Opts, [{proto_ver, v5}|Acc]);
 mqtt_opts([{username, Username}|Opts], Acc) ->
     mqtt_opts(Opts, [{username, list_to_binary(Username)}|Acc]);
 mqtt_opts([{password, Password}|Opts], Acc) ->
