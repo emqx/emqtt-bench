@@ -1,6 +1,5 @@
-{application, emqtt_bench,
- [
-  {description, "Erlang MQTT Broker Benchmark"},
+{application, emqtt_bench, [
+  {description, "Erlang MQTT v5.0 Benchmark Tool"},
   {vsn, "0.4"},
   {registered, []},
   {applications, [kernel, stdlib, emqtt, getopt]},
