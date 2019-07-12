@@ -10,3 +10,4 @@ rel/example_project
 .rebar
 log/
 _build/
+emqtt_bench
