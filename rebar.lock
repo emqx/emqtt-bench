@@ -1,7 +1,7 @@
 {"1.1.0",
 [{<<"emqtt">>,
   {git,"https://github.com/emqx/emqtt.git",
-       {ref,"d8aec3e633aefd84ae0a7cbcff57aa6f9d88c6b8"}},
+       {ref,"50e707b9fab8edf36b536416b23d2a81a1d453bd"}},
   0},
  {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
 [
