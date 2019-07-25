@@ -62,6 +62,8 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
+         {ws, undefined, "ws", {boolean, true},
+          "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
         ]).
@@ -98,6 +100,8 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
+         {ws, undefined, "ws", {boolean, true},
+          "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
         ]).
@@ -225,7 +229,7 @@ run(Parent, N, PubSub, Opts) ->
     spawn(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts]),
 	timer:sleep(proplists:get_value(interval, Opts)),
 	run(Parent, N-1, PubSub, Opts).
-    
+
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
@@ -236,7 +240,11 @@ connect(Parent, N, PubSub, Opts) ->
                | mqtt_opts(Opts)],
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts),
-    case emqtt:connect(Client) of
+    ConnRet = case proplists:get_bool(ws, Opts) of
+                  true  -> emqtt:ws_connect(Client);
+                  false -> emqtt:connect(Client)
+              end,
+    case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
             case PubSub of
@@ -300,7 +308,7 @@ mqtt_opts([{password, Password}|Opts], Acc) ->
     mqtt_opts(Opts, [{password, list_to_binary(Password)}|Acc]);
 mqtt_opts([{keepalive, I}|Opts], Acc) ->
     mqtt_opts(Opts, [{keepalive, I}|Acc]);
-mqtt_opts([{clean_start, Bool}|Opts], Acc) ->
+mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_start, Bool}|Acc]);
 mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
