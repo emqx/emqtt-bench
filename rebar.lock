@@ -1,10 +1,14 @@
 {"1.1.0",
-[{<<"emqtt">>,
+[{<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.6.0">>},2},
+ {<<"emqtt">>,
   {git,"https://github.com/emqx/emqtt.git",
-       {ref,"50e707b9fab8edf36b536416b23d2a81a1d453bd"}},
+       {ref,"885cd57049d7d0ad6941aeeb2b2f72df37a3e7d3"}},
   0},
- {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0}]}.
+ {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0},
+ {<<"gun">>,{pkg,<<"gun">>,<<"1.3.0">>},1}]}.
 [
 {pkg_hash,[
- {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>}]}
+ {<<"cowlib">>, <<"8AA629F81A0FC189F261DC98A42243FA842625FEEA3C7EC56C48F4CCDB55490F">>},
+ {<<"getopt">>, <<"C73A9FA687B217F2FF79F68A3B637711BB1936E712B521D8CE466B29CBF7808A">>},
+ {<<"gun">>, <<"18E5D269649C987AF95AEC309F68A27FFC3930531DD227A6EAA0884D6684286E">>}]}
 ].
