@@ -62,7 +62,7 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
-         {ws, undefined, "ws", {boolean, true},
+         {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
@@ -100,7 +100,7 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
-         {ws, undefined, "ws", {boolean, true},
+         {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
@@ -241,7 +241,9 @@ connect(Parent, N, PubSub, Opts) ->
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts),
     ConnRet = case proplists:get_bool(ws, Opts) of
-                  true  -> emqtt:ws_connect(Client);
+                  true  -> 
+                      io:format("Websocket connection"),
+                      emqtt:ws_connect(Client);
                   false -> emqtt:connect(Client)
               end,
     case ConnRet of

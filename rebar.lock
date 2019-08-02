@@ -1,8 +1,8 @@
 {"1.1.0",
 [{<<"cowlib">>,{pkg,<<"cowlib">>,<<"2.6.0">>},2},
  {<<"emqtt">>,
-  {git,"https://github.com/emqx/emqtt.git",
-       {ref,"885cd57049d7d0ad6941aeeb2b2f72df37a3e7d3"}},
+  {git,"https://github.com/emqx/emqtt",
+       {ref,"54e43116feba6fd7bc9c43c72cdebf93be79fa73"}},
   0},
  {<<"getopt">>,{pkg,<<"getopt">>,<<"1.0.1">>},0},
  {<<"gun">>,{pkg,<<"gun">>,<<"1.3.0">>},1}]}.
