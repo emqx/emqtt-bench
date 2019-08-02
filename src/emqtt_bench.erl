@@ -242,7 +242,6 @@ connect(Parent, N, PubSub, Opts) ->
 	{ok, Client} = emqtt:start_link(MqttOpts),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
-                      io:format("Websocket connection"),
                       emqtt:ws_connect(Client);
                   false -> emqtt:connect(Client)
               end,
