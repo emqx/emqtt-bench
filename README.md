@@ -5,7 +5,7 @@
 ## Build first
 
 ```sh
-make 
+make
 ```
 
 ## Sub Benchmark
@@ -16,7 +16,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-c [<count>]] [-i [<interval>]] [-t <topic>]
                        [-q [<qos>]] [-u <username>] [-P <password>]
                        [-k [<keepalive>]] [-C [<clean>]]
-                       [--ifaddr <ifaddr>]
+                       [--ifaddr <ifaddr>] [--ws <ws>]
 
   --help             help information
   -h, --host         mqtt server hostname or IP address [default: localhost]
@@ -31,6 +31,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   -k, --keepalive    keep alive in seconds [default: 300]
   -C, --clean        clean session [default: true]
   --ifaddr           local ipaddress or interface address
+  --ws               whether use websocket client to do benchmark [default: false]
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec: 
@@ -48,7 +49,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-I [<interval_of_msg>]] [-u <username>]
                        [-P <password>] [-t <topic>] [-s [<size>]]
                        [-q [<qos>]] [-r [<retain>]] [-k [<keepalive>]]
-                       [-C [<clean>]] [--ifaddr <ifaddr>]
+                       [-C [<clean>]] [--ifaddr <ifaddr>] [--ws <ws>]
 
   --help                 help information
   -h, --host             mqtt server hostname or IP address [default:
@@ -67,6 +68,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -k, --keepalive        keep alive in seconds [default: 300]
   -C, --clean            clean session [default: true]
   --ifaddr               local ipaddress or interface address
+  --ws                   whether use websocket client to do benchmark [default: false]
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
