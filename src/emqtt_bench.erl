@@ -106,6 +106,36 @@
           "local ipaddress or interface address"}
         ]).
 
+-define(CONN_OPTS, [
+         {help, undefined, "help", boolean,
+          "help information"},
+         {host, $h, "host", {string, "localhost"},
+          "mqtt server hostname or IP address"},
+         {port, $p, "port", {integer, 1883},
+          "mqtt server port number"},
+         {count, $c, "count", {integer, 200},
+          "max count of clients"},
+         {startnumber, $n, "startnumber", {integer, 0}, "start number"},
+         {interval, $i, "interval", {integer, 10},
+          "interval of connecting to the broker"},
+         {username, $u, "username", string,
+          "username for connecting to server"},
+         {password, $P, "password", string,
+          "password for connecting to server"},
+         {keepalive, $k, "keepalive", {integer, 300},
+          "keep alive in seconds"},
+         {clean, $C, "clean", {boolean, true},
+          "clean session"},
+         {ssl, $S, "ssl", {boolean, false},
+          "ssl socoket for connecting to server"},
+         {certfile, undefined, "certfile", string,
+          "client certificate for authentication, if required by server"},
+         {keyfile, undefined, "keyfile", string,
+          "client private key for authentication, if required by server"},
+         {ifaddr, undefined, "ifaddr", string,
+          "local ipaddress or interface address"}
+        ]).
+
 -define(TAB, ?MODULE).
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
@@ -122,10 +152,16 @@ main(["pub"|Argv]) ->
     ok = check_required_args(pub, [count, topic], Opts),
     main(pub, Opts);
 
+main(["conn"|Argv]) ->
+    {ok, {Opts, _Args}} = getopt:parse(?CONN_OPTS, Argv),
+    ok = maybe_help(conn, Opts),
+    ok = check_required_args(conn, [count], Opts),
+    main(conn, Opts);
+
 main(_Argv) ->
     ScriptPath = escript:script_name(),
     Script = filename:basename(ScriptPath),
-    io:format("Usage: ~s pub | sub [--help]~n", [Script]).
+    io:format("Usage: ~s pub | sub | conn [--help]~n", [Script]).
 
 maybe_help(PubSub, Opts) ->
     case proplists:get_value(help, Opts) of
@@ -151,7 +187,8 @@ usage(PubSub) ->
     Script = filename:basename(ScriptPath),
     Opts = case PubSub of
                pub -> ?PUB_OPTS;
-               sub -> ?SUB_OPTS
+               sub -> ?SUB_OPTS;
+               conn -> ?CONN_OPTS
            end,
     getopt:usage(Opts, Script ++ " " ++ atom_to_list(PubSub)).
 
@@ -161,7 +198,10 @@ main(sub, Opts) ->
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
     Payload = iolist_to_binary([O || O <- lists:duplicate(Size, 0)]),
-    start(pub, [{payload, Payload} | Opts]).
+    start(pub, [{payload, Payload} | Opts]);
+
+main(conn, Opts) ->
+    start(conn, Opts).
 
 start(PubSub, Opts) ->
     prepare(), init(),
@@ -249,6 +289,7 @@ connect(Parent, N, PubSub, Opts) ->
         {ok, _Props} ->
             Parent ! {connected, N, Client},
             case PubSub of
+                conn -> ok;
                 sub ->
                     subscribe(Client, AllOpts);
                 pub ->
