@@ -1,3 +1,4 @@
+
 %%--------------------------------------------------------------------
 %% Copyright (c) 2019 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
@@ -21,7 +22,7 @@
         , start/2
         , run/3
         , connect/4
-        , loop/4
+        , loop/5
         ]).
 
 -define(PUB_OPTS,
@@ -38,7 +39,7 @@
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
-         {interval_of_msg, $I, "interval_of_msg", {integer, 1000},
+         {interval_of_msg, $I, "interval_of_msg", {string, "1000"},
           "interval of publishing message(ms)"},
          {username, $u, "username", string,
           "username for connecting to server"},
@@ -277,47 +278,61 @@ connect(Parent, N, PubSub, Opts) ->
     MqttOpts = [{client_id, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}
-               | mqtt_opts(Opts)],
+                | mqtt_opts(Opts)],
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts),
     ConnRet = case proplists:get_bool(ws, Opts) of
-                  true  -> 
-                      emqtt:ws_connect(Client);
+                  true  -> emqtt:ws_connect(Client);
                   false -> emqtt:connect(Client)
               end,
     case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
-            case PubSub of
-                conn -> ok;
-                sub ->
-                    subscribe(Client, AllOpts);
-                pub ->
-                   Interval = proplists:get_value(interval_of_msg, Opts),
-                   timer:send_interval(Interval, publish)
-            end,
-            loop(N, Client, PubSub, AllOpts);
+            Amplifier = case PubSub of
+                            conn -> ok, 1;
+                            sub -> subscribe(Client, AllOpts), 1;
+                            pub ->
+                                SInterval = proplists:get_value(interval_of_msg, Opts),
+                                try list_to_float(SInterval) of
+                                    FInterval when FInterval > 0, FInterval < 1 ->
+                                        timer:send_interval(1, publish),
+                                        erlang:round(1 / FInterval);
+                                    FInterval  ->
+                                        IInterval = erlang:round(FInterval),
+                                        timer:send_interval(IInterval, publish),
+                                        1
+                                catch
+                                    _E:_R:_S ->
+                                        Interval = list_to_integer(SInterval),
+                                        timer:send_interval(Interval, publish),
+                                        1
+                                end
+                        end,
+            loop(N, Client, PubSub, AllOpts, Amplifier);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error])
     end.
 
-loop(N, Client, PubSub, Opts) ->
+loop(N, Client, PubSub, Opts, Amplifier) ->
     receive
         publish ->
-            case publish(Client, Opts) of
-                ok -> inc_counter(sent);
-                {ok, _} ->
-                    inc_counter(sent);
-                {error, Reason} ->
-                    io:format("client(~w): publish error - ~p~n", [N, Reason])
-            end,
-            loop(N, Client, PubSub, Opts);
+            [publish_inc(Client, Opts, N) || _ <- lists:seq(1, Amplifier)],
+            loop(N, Client, PubSub, Opts, Amplifier);
         {publish, _Publish} ->
             inc_counter(recv),
-            loop(N, Client, PubSub, Opts);
+            loop(N, Client, PubSub, Opts, Amplifier);
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
 	end.
+
+publish_inc(Client, Opts, N) ->
+    case publish(Client, Opts) of
+        ok -> inc_counter(sent);
+        {ok, _} ->
+            inc_counter(sent);
+        {error, Reason} ->
+            io:format("client(~w): publish error - ~p~n", [N, Reason])
+    end.
 
 subscribe(Client, Opts) ->
     Qos = proplists:get_value(qos, Opts),
