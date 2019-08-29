@@ -1,4 +1,3 @@
-
 %%--------------------------------------------------------------------
 %% Copyright (c) 2019 EMQ Technologies Co., Ltd. All Rights Reserved.
 %%
