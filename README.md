@@ -10,19 +10,59 @@ Requires Erlang/OTP R21.2+ to build.
 make
 ```
 
+## Connect Benchmark
+
+```sh
+$ docker run -it --rm test:latest conn --help
+Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
+                        [-c [<count>]] [-n [<startnumber>]]
+                        [-i [<interval>]] [-u <username>] [-P <password>]
+                        [-k [<keepalive>]] [-C [<clean>]] [-S [<ssl>]]
+                        [--certfile <certfile>] [--keyfile <keyfile>]
+                        [--ifaddr <ifaddr>]
+
+  --help             help information
+  -h, --host         mqtt server hostname or IP address [default:
+                     localhost]
+  -p, --port         mqtt server port number [default: 1883]
+  -c, --count        max count of clients [default: 200]
+  -n, --startnumber  start number [default: 0]
+  -i, --interval     interval of connecting to the broker [default: 10]
+  -u, --username     username for connecting to server
+  -P, --password     password for connecting to server
+  -k, --keepalive    keep alive in seconds [default: 300]
+  -C, --clean        clean session [default: true]
+  -S, --ssl          ssl socoket for connecting to server [default: false]
+  --certfile         client certificate for authentication, if required by
+                     server
+  --keyfile          client private key for authentication, if required by
+                     server
+  --ifaddr           local ipaddress or interface address
+```
+
+For example, create 50K concurrent connections at the arrival rate of 100/sec:
+
+```sh
+./emqtt_bench conn -c 50000 -i 10
+```
+
 ## Sub Benchmark
 
 ```sh
 $ ./emqtt_bench sub --help
 Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
-                       [-c [<count>]] [-i [<interval>]] [-t <topic>]
-                       [-q [<qos>]] [-u <username>] [-P <password>]
-                       [-k [<keepalive>]] [-C [<clean>]]
-                       [--ifaddr <ifaddr>] [--ws <ws>]
+                       [-V [<version>]] [-c [<count>]]
+                       [-n [<startnumber>]] [-i [<interval>]]
+                       [-t <topic>] [-q [<qos>]] [-u <username>]
+                       [-P <password>] [-k [<keepalive>]] [-C [<clean>]]
+                       [-S [<ssl>]] [--certfile <certfile>]
+                       [--keyfile <keyfile>] [--ws [<ws>]]
+                       [--ifaddr <ifaddr>]
 
   --help             help information
   -h, --host         mqtt server hostname or IP address [default: localhost]
   -p, --port         mqtt server port number [default: 1883]
+  -V, --version      mqtt protocol version: 3 | 4 | 5 [default: 5]
   -c, --count        max count of clients [default: 200]
   -n, --startnumber  start number [default: 0]
   -i, --interval     interval of connecting to the broker [default: 10]
@@ -31,9 +71,12 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   -u, --username     username for connecting to server
   -P, --password     password for connecting to server
   -k, --keepalive    keep alive in seconds [default: 300]
-  -C, --clean        clean session [default: true]
+  -C, --clean        clean start [default: true]
+  -S, --ssl          ssl socoket for connecting to server [default: false]
+  --certfile         client certificate for authentication, if required by server
+  --keyfile          client private key for authentication, if required by server
+  --ws               websocket transport [default: false]
   --ifaddr           local ipaddress or interface address
-  --ws               whether use websocket client to do benchmark [default: false]
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec: 
@@ -47,16 +90,19 @@ For example, create 50K concurrent connections at the arrival rate of 100/sec:
 ```sh
 $ ./emqtt_bench pub --help
 Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
-                       [-c [<count>]] [-i [<interval>]]
+                       [-V [<version>]] [-c [<count>]]
+                       [-n [<startnumber>]] [-i [<interval>]]
                        [-I [<interval_of_msg>]] [-u <username>]
                        [-P <password>] [-t <topic>] [-s [<size>]]
                        [-q [<qos>]] [-r [<retain>]] [-k [<keepalive>]]
-                       [-C [<clean>]] [--ifaddr <ifaddr>] [--ws <ws>]
+                       [-C [<clean>]] [-S [<ssl>]]
+                       [--certfile <certfile>] [--keyfile <keyfile>]
+                       [--ws [<ws>]] [--ifaddr <ifaddr>]
 
   --help                 help information
-  -h, --host             mqtt server hostname or IP address [default:
-                         localhost]
+  -h, --host             mqtt server hostname or IP address [default: localhost]
   -p, --port             mqtt server port number [default: 1883]
+  -V, --version          mqtt protocol version: 3 | 4 | 5 [default: 5]
   -c, --count            max count of clients [default: 200]
   -n, --startnumber      start number [default: 0]
   -i, --interval         interval of connecting to the broker [default: 10]
@@ -68,9 +114,12 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -q, --qos              subscribe qos [default: 0]
   -r, --retain           retain message [default: false]
   -k, --keepalive        keep alive in seconds [default: 300]
-  -C, --clean            clean session [default: true]
+  -C, --clean            clean start [default: true]
+  -S, --ssl              ssl socoket for connecting to server [default: false]
+  --certfile             client certificate for authentication, if required by server
+  --keyfile              client private key for authentication, if required by server
+  --ws                   websocket transport [default: false]
   --ifaddr               local ipaddress or interface address
-  --ws                   whether use websocket client to do benchmark [default: false]
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
