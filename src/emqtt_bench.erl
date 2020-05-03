@@ -219,17 +219,17 @@ init() ->
     put({stats, sent}, 0).
 
 main_loop(Uptime, Count) ->
-	receive
-		{connected, _N, _Client} ->
-			io:format("connected: ~w~n", [Count]),
-			main_loop(Uptime, Count+1);
+    receive
+        {connected, _N, _Client} ->
+            return_print("connected: ~w", [Count]),
+            main_loop(Uptime, Count+1);
         stats ->
             print_stats(Uptime),
-			main_loop(Uptime, Count);
+            main_loop(Uptime, Count);
         Msg ->
-            io:format("~p~n", [Msg]),
+            print("~p~n", [Msg]),
             main_loop(Uptime, Count)
-	end.
+    end.
 
 print_stats(Uptime) ->
     print_stats(Uptime, recv),
@@ -241,11 +241,32 @@ print_stats(Uptime, Name) ->
     case CurVal == LastVal of
         false ->
             Tdiff = timer:now_diff(os:timestamp(), Uptime) div 1000,
-            io:format("~s(~w): total=~w, rate=~w(msg/sec)~n",
-                        [Name, Tdiff, CurVal, CurVal - LastVal]),
+            print("~s(~w): total=~w, rate=~w(msg/sec)~n",
+                  [Name, Tdiff, CurVal, CurVal - LastVal]),
             put({stats, Name}, CurVal);
         true -> ok
     end.
+
+%% this is only used for main loop
+return_print(Fmt, Args) ->
+    print(return, Fmt, Args).
+
+print(Fmt, Args) ->
+    print(feed, Fmt, Args).
+
+print(ReturnMaybeFeed, Fmt, Args) ->
+    % print the return
+    io:format("\r"),
+    maybe_feed(ReturnMaybeFeed),
+    io:format(Fmt, Args).
+
+maybe_feed(ReturnMaybeFeed) ->
+    Last = get(?FUNCTION_NAME),
+    maybe_feed(Last, ReturnMaybeFeed),
+    put(?FUNCTION_NAME, ReturnMaybeFeed).
+
+maybe_feed(return, feed) -> io:format("\n");
+maybe_feed(_, _) -> ok.
 
 get_counter(sent) ->
     counters:get(cnt_ref(), ?IDX_SENT);
