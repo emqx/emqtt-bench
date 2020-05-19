@@ -394,6 +394,8 @@ ssl_opts(Opts) ->
     ssl_opts(Opts, []).
 ssl_opts([], Acc) ->
     [{ciphers, ssl:cipher_suites(all)} | Acc];
+ssl_opts([{host, Host} | Opts], Acc) ->
+    ssl_opts(Opts, [{server_name_indication, Host} | Acc]);
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
     ssl_opts(Opts, [{keyfile, KeyFile}|Acc]);
 ssl_opts([{certfile, CertFile} | Opts], Acc) ->
