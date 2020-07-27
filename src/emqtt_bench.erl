@@ -113,6 +113,8 @@
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
+         {version, $V, "version", {integer, 5},
+          "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},

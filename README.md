@@ -25,6 +25,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
   -h, --host         mqtt server hostname or IP address [default:
                      localhost]
   -p, --port         mqtt server port number [default: 1883]
+  -V, --version      mqtt protocol version: 3 | 4 | 5 [default: 5]
   -c, --count        max count of clients [default: 200]
   -n, --startnumber  start number [default: 0]
   -i, --interval     interval of connecting to the broker [default: 10]
