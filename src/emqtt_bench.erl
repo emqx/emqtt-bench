@@ -65,7 +65,9 @@
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {file, $f, "file", string,
+          "payload json file"}
         ]).
 
 -define(SUB_OPTS,
@@ -198,8 +200,10 @@ main(sub, Opts) ->
     start(sub, Opts);
 
 main(pub, Opts) ->
-    Size    = proplists:get_value(size, Opts),
-    Payload = iolist_to_binary([O || O <- lists:duplicate(Size, 0)]),
+%%    FileName = proplists:get_value(file, Opts),
+%%    {ok, Bin} = file:read_file(FileName),
+%%    Payload = Bin,
+    Payload = <<>>,
     start(pub, [{payload, Payload} | Opts]);
 
 main(conn, Opts) ->
@@ -349,7 +353,8 @@ subscribe(Client, Opts) ->
 publish(Client, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
-    Payload = proplists:get_value(payload, Opts),
+%%    Payload = proplists:get_value(payload, Opts),
+    Payload = make_payload(),
     emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
 
 mqtt_opts(Opts) ->
@@ -471,4 +476,36 @@ bin(I) when is_integer(I)-> bin(integer_to_list(I));
 bin(S) when is_list(S)   -> list_to_binary(S);
 bin(B) when is_binary(B) -> B;
 bin(undefined)           -> undefined.
+
+make_payload() ->
+    Resp = #{
+        <<"mId">> => 87691023,
+        <<"devSn">> => <<"0537369409">>,
+        <<"productCode">> => null
+    },
+    Objective = #{
+        <<"devSn">> => <<"0343278630">>,
+        <<"productCode">> => <<"METER">>,
+        <<"sourceType">> => <<"TERMINAL">>,
+        <<"cmdType">> => <<"REPORT_DATA">>
+    },
+    DataItem = #{
+        <<"dataItemId">> => <<"2004-10201-000">>,
+        <<"dataItemName">> => <<"当前有功总功率">>
+    },
+    DataItem1 = DataItem#{<<"dataReturnTime">> => get_datetime(), <<"dataValue">> => get_date_value()},
+    Objective1 = Objective#{<<"dataItemList">> => [DataItem1]},
+    Resp1 = Resp#{<<"objectiveList">> => [Objective1]},
+    jsx:encode(Resp1).
+
+strftime({{Y,M,D}, {H,MM,S}}) ->
+    lists:flatten(
+        io_lib:format(
+            "~4..0w-~2..0w-~2..0w ~2..0w:~2..0w:~2..0w", [Y, M, D, H, MM, S])).
+
+get_datetime() ->
+    list_to_binary(strftime(calendar:local_time())).
+
+get_date_value() ->
+    rand:uniform(100).
 

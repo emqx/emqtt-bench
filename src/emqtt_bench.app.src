@@ -2,7 +2,7 @@
   {description, "Erlang MQTT v5.0 Benchmark Tool"},
   {vsn, "0.5"},
   {registered, []},
-  {applications, [kernel, stdlib, emqtt, getopt, gun, cowlib]},
+  {applications, [kernel, stdlib, emqtt, getopt, jsx, jiffy, gun, cowlib]},
   {env, []},
   {maintainers,["Feng Lee <feng@emqx.io>"]},
   {licenses, ["Apache-2.0"]},
