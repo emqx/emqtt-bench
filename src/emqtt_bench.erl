@@ -395,7 +395,7 @@ tcp_opts([_|Opts], Acc) ->
 ssl_opts(Opts) ->
     ssl_opts(Opts, []).
 ssl_opts([], Acc) ->
-    [{ciphers, ssl:cipher_suites(all)} | Acc];
+    [{ciphers, ssl:cipher_suites(2,3)} | Acc];
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
     ssl_opts(Opts, [{keyfile, KeyFile}|Acc]);
 ssl_opts([{certfile, CertFile} | Opts], Acc) ->
