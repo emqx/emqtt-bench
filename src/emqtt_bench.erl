@@ -395,13 +395,17 @@ tcp_opts([_|Opts], Acc) ->
 ssl_opts(Opts) ->
     ssl_opts(Opts, []).
 ssl_opts([], Acc) ->
-    [{ciphers, ssl:cipher_suites(all)} | Acc];
+    [{ciphers, all_ssl_ciphers()} | Acc];
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
     ssl_opts(Opts, [{keyfile, KeyFile}|Acc]);
 ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
+
+all_ssl_ciphers() ->
+    Vers = ['tlsv1', 'tlsv1.1', 'tlsv1.2', 'tlsv1.3'],
+    lists:usort(lists:concat([ssl:cipher_suites(all, Ver) || Ver <- Vers])).
 
 client_id(PubSub, N, Opts) ->
     Prefix =
