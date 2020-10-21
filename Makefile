@@ -24,6 +24,10 @@ distclean:
 xref: compile
 	$(REBAR) xref
 
+.PHONY: docker
+docker:
+	@docker build --no-cache -t emqtt_bench:$$(git describe --tags --always) .
+
 $(REBAR):
 ifneq ($(wildcard rebar3),rebar3)
 	@curl -Lo rebar3 $(REBAR_URL) || wget $(REBAR_URL)

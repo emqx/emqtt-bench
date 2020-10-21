@@ -7,13 +7,13 @@ Requires Erlang/OTP R21.2+ to build.
 ## Build first
 
 ```sh
-make
+make docker
 ```
 
 ## Connect Benchmark
 
 ```sh
-$ ./emqtt_bench conn --help
+$ docker run -it emqtt_bench conn --help
 Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
                         [-c [<count>]] [-n [<startnumber>]]
                         [-i [<interval>]] [-u <username>] [-P <password>]
@@ -25,7 +25,6 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
   -h, --host         mqtt server hostname or IP address [default:
                      localhost]
   -p, --port         mqtt server port number [default: 1883]
-  -V, --version      mqtt protocol version: 3 | 4 | 5 [default: 5]
   -c, --count        max count of clients [default: 200]
   -n, --startnumber  start number [default: 0]
   -i, --interval     interval of connecting to the broker [default: 10]
@@ -44,13 +43,13 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
 
 ```sh
-./emqtt_bench conn -c 50000 -i 10
+docker run -it emqtt_bench conn -c 50000 -i 10
 ```
 
 ## Sub Benchmark
 
 ```sh
-$ ./emqtt_bench sub --help
+$ docker run -it emqtt_bench sub --help
 Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-V [<version>]] [-c [<count>]]
                        [-n [<startnumber>]] [-i [<interval>]]
@@ -83,13 +82,13 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
 For example, create 50K concurrent connections at the arrival rate of 100/sec: 
 
 ```sh
-./emqtt_bench sub -c 50000 -i 10 -t bench/%i -q 2
+docker run -it emqtt_bench sub -c 50000 -i 10 -t bench/%i -q 2
 ```
 
 ## Pub Benchmark
 
 ```sh
-$ ./emqtt_bench pub --help
+$ docker run -it emqtt_bench pub --help
 Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-V [<version>]] [-c [<count>]]
                        [-n [<startnumber>]] [-i [<interval>]]
@@ -126,27 +125,27 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
 
 ```sh
-./emqtt_bench pub -c 100 -I 10 -t bench/%i -s 256
+docker run -it emqtt_bench pub -c 100 -I 10 -t bench/%i -s 256
 ```
 
 ## Local interface
 
 ```sh
-./emqtt_bench pub --ifaddr 192.168.1.10
-./emqtt_bench sub --ifaddr 192.168.2.10
+docker run -it emqtt_bench pub --ifaddr 192.168.1.10
+docker run -it emqtt_bench sub --ifaddr 192.168.2.10
 ```
 
 ## One-way SSL Socket
 
 ```sh
-./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 -S
-./emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 -S
+docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 -S
+docker run -it emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 -S
 ```
 
 ## Two-way SSL Socket
 ```sh
-./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
-./emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+docker run -it emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
 ```
 
 ## Notice
