@@ -113,6 +113,8 @@
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
+         {version, $V, "version", {integer, 5},
+          "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},
@@ -299,8 +301,12 @@ connect(Parent, N, PubSub, Opts) ->
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}
                | mqtt_opts(Opts)],
+    MqttOpts1 = case PubSub of
+                  conn -> [{force_ping, true} | MqttOpts];
+                  _ -> MqttOpts
+                end,
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link(MqttOpts),
+	{ok, Client} = emqtt:start_link(MqttOpts1),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
                       emqtt:ws_connect(Client);
@@ -393,7 +399,7 @@ tcp_opts([_|Opts], Acc) ->
 ssl_opts(Opts) ->
     ssl_opts(Opts, []).
 ssl_opts([], Acc) ->
-    [{ciphers, ssl:cipher_suites(all)} | Acc];
+    [{ciphers, all_ssl_ciphers()} | Acc];
 ssl_opts([{host, Host} | Opts], Acc) ->
     ssl_opts(Opts, [{server_name_indication, Host} | Acc]);
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
@@ -402,6 +408,10 @@ ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
+
+all_ssl_ciphers() ->
+    Vers = ['tlsv1', 'tlsv1.1', 'tlsv1.2', 'tlsv1.3'],
+    lists:usort(lists:concat([ssl:cipher_suites(all, Ver) || Ver <- Vers])).
 
 client_id(PubSub, N, Opts) ->
     Prefix =
