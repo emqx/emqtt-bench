@@ -202,7 +202,9 @@ main(sub, Opts) ->
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
     Payload = iolist_to_binary([O || O <- lists:duplicate(Size, $a)]),
-    start(pub, [{payload, Payload} | Opts]);
+    MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(number, Opts)),
+
+    start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
 
 main(conn, Opts) ->
     start(conn, Opts).
@@ -331,14 +333,13 @@ connect(Parent, N, PubSub, Opts) ->
     end.
 
 loop(N, Client, PubSub, Opts) ->
+    case (proplists:get_value(limit_fun, Opts))() of
+        true -> ok;
+        _ ->
+            exit(normal)
+    end,
     receive
         publish ->
-            case proplists:get_value(number, Opts)of
-                0 -> ok;
-                CntLimit ->
-                    get_counter(sent) >= CntLimit
-                    andalso exit(normal)
-            end,
             case publish(Client, Opts) of
                 ok -> inc_counter(sent);
                 {ok, _} ->
@@ -353,6 +354,21 @@ loop(N, Client, PubSub, Opts) ->
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
 	end.
+
+consumer_pub_msg_fun_init(0) ->
+    fun() -> true end;
+consumer_pub_msg_fun_init(N)
+  when is_integer(N),
+       N > 0 ->
+    Ref = counters:new(1, []),
+    counters:put(Ref, 1, N),
+    fun() ->
+        case counters:get(Ref, 1) of
+            0 -> false;
+            _ ->
+                counters:sub(Ref, 1, 1), true
+        end
+    end.
 
 subscribe(Client, Opts) ->
     Qos = proplists:get_value(qos, Opts),
