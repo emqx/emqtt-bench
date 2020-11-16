@@ -56,6 +56,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
+         {number, $N, "number", {integer, 0},
+          "The max message count to publish"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -199,7 +201,7 @@ main(sub, Opts) ->
 
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
-    Payload = iolist_to_binary([O || O <- lists:duplicate(Size, 0)]),
+    Payload = iolist_to_binary([O || O <- lists:duplicate(Size, $a)]),
     start(pub, [{payload, Payload} | Opts]);
 
 main(conn, Opts) ->
@@ -331,6 +333,12 @@ connect(Parent, N, PubSub, Opts) ->
 loop(N, Client, PubSub, Opts) ->
     receive
         publish ->
+            case proplists:get_value(number, Opts)of
+                0 -> ok;
+                CntLimit ->
+                    get_counter(sent) >= CntLimit
+                    andalso exit(normal)
+            end,
             case publish(Client, Opts) of
                 ok -> inc_counter(sent);
                 {ok, _} ->
