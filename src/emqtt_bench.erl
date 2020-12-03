@@ -21,7 +21,7 @@
         , start/2
         , run/3
         , connect/4
-        , loop/4
+        , loop/5
         ]).
 
 -define(PUB_OPTS,
@@ -56,8 +56,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
-         {number, $N, "number", {integer, 0},
-          "The max message count to publish"},
+         {limit, $L, "limit", {integer, 0},
+          "The max message count to publish, 0 means unlimited"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -202,7 +202,7 @@ main(sub, Opts) ->
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
     Payload = iolist_to_binary([O || O <- lists:duplicate(Size, $a)]),
-    MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(number, Opts)),
+    MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
 
     start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
 
@@ -226,6 +226,8 @@ init() ->
 
 main_loop(Uptime, Count) ->
     receive
+        publish_complete ->
+            return_print("publish complete", []);
         {connected, _N, _Client} ->
             return_print("connected: ~w", [Count]),
             main_loop(Uptime, Count+1);
@@ -327,17 +329,12 @@ connect(Parent, N, PubSub, Opts) ->
                    Interval = proplists:get_value(interval_of_msg, Opts),
                    timer:send_interval(Interval, publish)
             end,
-            loop(N, Client, PubSub, AllOpts);
+            loop(Parent, N, Client, PubSub, AllOpts);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error])
     end.
 
-loop(N, Client, PubSub, Opts) ->
-    case (proplists:get_value(limit_fun, Opts))() of
-        true -> ok;
-        _ ->
-            exit(normal)
-    end,
+loop(Parent, N, Client, PubSub, Opts) ->
     receive
         publish ->
             case publish(Client, Opts) of
@@ -347,19 +344,22 @@ loop(N, Client, PubSub, Opts) ->
                 {error, Reason} ->
                     io:format("client(~w): publish error - ~p~n", [N, Reason])
             end,
-            loop(N, Client, PubSub, Opts);
+            case (proplists:get_value(limit_fun, Opts))() of
+                true -> loop(Parent, N, Client, PubSub, Opts);
+                _ ->
+                    Parent ! publish_complete,
+                    exit(normal)
+            end;
         {publish, _Publish} ->
             inc_counter(recv),
-            loop(N, Client, PubSub, Opts);
+            loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
 	end.
 
 consumer_pub_msg_fun_init(0) ->
     fun() -> true end;
-consumer_pub_msg_fun_init(N)
-  when is_integer(N),
-       N > 0 ->
+consumer_pub_msg_fun_init(N) when is_integer(N), N > 0 ->
     Ref = counters:new(1, []),
     counters:put(Ref, 1, N),
     fun() ->
