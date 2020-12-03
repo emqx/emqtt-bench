@@ -3,11 +3,13 @@ deps
 *.o
 *.beam
 *.plt
+*.swp
 erl_crash.dump
 ebin
 rel/example_project
 .concrete/DEV_MODE
 .rebar
+rebar.lock
 log/
 _build/
 emqtt_bench

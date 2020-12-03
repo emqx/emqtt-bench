@@ -116,6 +116,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -r, --retain           retain message [default: false]
   -k, --keepalive        keep alive in seconds [default: 300]
   -C, --clean            clean start [default: true]
+  -L, --limit            The max message count to publish, 0 means unlimited [default: 0]
   -S, --ssl              ssl socoket for connecting to server [default: false]
   --certfile             client certificate for authentication, if required by server
   --keyfile              client private key for authentication, if required by server
