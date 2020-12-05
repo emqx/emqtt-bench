@@ -337,15 +337,16 @@ connect(Parent, N, PubSub, Opts) ->
 loop(Parent, N, Client, PubSub, Opts) ->
     receive
         publish ->
-            case publish(Client, Opts) of
-                ok -> inc_counter(sent);
-                {ok, _} ->
-                    inc_counter(sent);
-                {error, Reason} ->
-                    io:format("client(~w): publish error - ~p~n", [N, Reason])
-            end,
-            case (proplists:get_value(limit_fun, Opts))() of
-                true -> loop(Parent, N, Client, PubSub, Opts);
+           case (proplists:get_value(limit_fun, Opts))() of
+                true -> 
+                    case publish(Client, Opts) of
+                        ok -> inc_counter(sent);
+                        {ok, _} ->
+                            inc_counter(sent);
+                        {error, Reason} ->
+                            io:format("client(~w): publish error - ~p~n", [N, Reason])
+                    end,
+                    loop(Parent, N, Client, PubSub, Opts);
                 _ ->
                     Parent ! publish_complete,
                     exit(normal)
