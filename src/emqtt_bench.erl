@@ -307,12 +307,8 @@ connect(Parent, N, PubSub, Opts) ->
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}
                | mqtt_opts(Opts)],
-    MqttOpts1 = case PubSub of
-                  conn -> [{force_ping, true} | MqttOpts];
-                  _ -> MqttOpts
-                end,
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link(MqttOpts1),
+	{ok, Client} = emqtt:start_link(MqttOpts),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
                       emqtt:ws_connect(Client);
