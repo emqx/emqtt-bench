@@ -7,7 +7,7 @@ REBAR_URL = https://s3.amazonaws.com/rebar3/rebar3
 all: compile
 
 compile: $(REBAR) unlock
-	$(REBAR) compile
+	$(REBAR) release
 
 .PHONY: unlock
 unlock:
