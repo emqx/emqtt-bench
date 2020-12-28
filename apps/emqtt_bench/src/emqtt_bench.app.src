@@ -1,0 +1,12 @@
+{application, emqtt_bench, [
+  {description, "Erlang MQTT v5.0 Benchmark Tool"},
+  {vsn, "0.5"},
+  {registered, []},
+  {mod, {nari_sim_client_app, []}},
+  {applications, [kernel, stdlib, emqtt, getopt, jsx, jiffy, gun, cowlib]},
+  {env, []},
+  {modules, []},
+  {maintainers,["Feng Lee <feng@emqx.io>"]},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"Github", "https://github.com/emqx/emqtt"}]}
+ ]}.
