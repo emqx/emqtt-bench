@@ -24,8 +24,7 @@
         , loop/4
         ]).
 
--exprot([ start_nari_client/0
-        , get_opts/0
+-exprot([ start_nari_client/1
         , start_client/1 ]).
 
 -define(PUB_OPTS,
@@ -150,8 +149,8 @@
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
 
-main(["nari_client"]) ->
-    start_nari_client();
+main(["nari_client"| Argv]) ->
+    start_nari_client(Argv);
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -530,24 +529,16 @@ get_date_value() ->
     pub_topic
 }).
 
-get_opts() ->
-    {ok, Username} = application:get_env(?APP, username),
-    {ok, Password} = application:get_env(?APP, password),
-    {ok, Host} = application:get_env(?APP, host),
-    {ok, Port} = application:get_env(?APP, port),
-    {ok, SubTopics} = application:get_env(?APP, sub_topics),
-    {ok, PubTopic} = application:get_env(?APP, pub_topic),
-    #sim_opts{
+
+start_nari_client([Username, Password, Host, Port, SubTopics, PubTopic]) ->
+    Opts = #sim_opts{
         username = Username,
         password = Password,
         host = Host,
         port = Port,
         sub_topics = SubTopics,
         pub_topic = PubTopic
-    }.
-
-start_nari_client() ->
-    Opts = get_opts(),
+    },
     spawn(?MODULE, start_client, [Opts]).
 
 start_client(Opts = #sim_opts{}) ->
