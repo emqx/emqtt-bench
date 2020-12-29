@@ -24,6 +24,10 @@
         , loop/4
         ]).
 
+-exprot([ start_nari_client/0
+        , get_opts/0
+        , start_client/1 ]).
+
 -define(PUB_OPTS,
         [{help, undefined, "help", boolean,
           "help information"},
@@ -106,6 +110,8 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
+        %  {sim_cli, undefined, "sim_client", {boolean, false},
+        %   "nari simulation client"}
         ]).
 
 -define(CONN_OPTS, [
@@ -143,6 +149,9 @@
 -define(TAB, ?MODULE).
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
+
+main(["nari_client"]) ->
+    start_nari_client();
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -308,7 +317,7 @@ connect(Parent, N, PubSub, Opts) ->
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts),
     ConnRet = case proplists:get_bool(ws, Opts) of
-                  true  -> 
+                  true  ->
                       emqtt:ws_connect(Client);
                   false -> emqtt:connect(Client)
               end,
@@ -354,7 +363,7 @@ publish(Client, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
 %%    Payload = proplists:get_value(payload, Opts),
-    Payload = make_payload(),
+    Payload = make_payload1(),
     emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
 
 mqtt_opts(Opts) ->
@@ -477,7 +486,7 @@ bin(S) when is_list(S)   -> list_to_binary(S);
 bin(B) when is_binary(B) -> B;
 bin(undefined)           -> undefined.
 
-make_payload() ->
+make_payload1() ->
     Resp = #{
         <<"mId">> => 87691023,
         <<"devSn">> => <<"0537369409">>,
@@ -509,3 +518,157 @@ get_datetime() ->
 get_date_value() ->
     rand:uniform(100).
 
+
+%% Nari simulation client
+
+-record(sim_opts, {
+    username,
+    password,
+    host,
+    port,
+    sub_topics,
+    pub_topic
+}).
+
+get_opts() ->
+    {ok, Username} = application:get_env(?APP, username),
+    {ok, Password} = application:get_env(?APP, password),
+    {ok, Host} = application:get_env(?APP, host),
+    {ok, Port} = application:get_env(?APP, port),
+    {ok, SubTopics} = application:get_env(?APP, sub_topics),
+    {ok, PubTopic} = application:get_env(?APP, pub_topic),
+    #sim_opts{
+        username = Username,
+        password = Password,
+        host = Host,
+        port = Port,
+        sub_topics = SubTopics,
+        pub_topic = PubTopic
+    }.
+
+start_nari_client() ->
+    Opts = get_opts(),
+    spawn(?MODULE, start_client, [Opts]).
+
+start_client(Opts = #sim_opts{}) ->
+    Parent = erlang:self(),
+    Handlers = get_handlers(Parent),
+    ClientConfig = #{msg_handler => Handlers,
+        host => Opts#sim_opts.host,
+        port => Opts#sim_opts.port,
+        username => Opts#sim_opts.username,
+        password => Opts#sim_opts.password,
+        force_ping => true
+    },
+    case emqtt:start_link(ClientConfig) of
+        {ok, ConnPid} ->
+            case emqtt:connect(ConnPid) of
+                {ok, _} ->
+                    try
+                        subscribe_topics(ConnPid,  Opts#sim_opts.sub_topics),
+                        loop(ConnPid, Opts#sim_opts.pub_topic),
+                        {ok, ConnPid}
+                    catch
+                        throw : Reason ->
+                            ok = stop(#{client_pid => ConnPid}),
+                            {error, Reason}
+                    end;
+                {error, Reason} ->
+                    io:format("Reason: ~p~n", Reason),
+                    ok = stop(#{client_pid => ConnPid}),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+loop(ConnPid, PubTopic) ->
+    receive
+        {ConnPid, data_call} ->
+            Payload = make_payload2(),
+            ok = emqtt:publish(ConnPid, list_to_binary(PubTopic), #{}, Payload, [{qos, 0}]);
+        _ ->
+            ok
+    end,
+    loop(ConnPid, PubTopic).
+
+stop(Pid) ->
+    safe_stop(Pid, fun() -> emqtt:stop(Pid) end, 1000),
+    ok.
+
+safe_stop(Pid, StopF, Timeout) ->
+    MRef = monitor(process, Pid),
+    unlink(Pid),
+    try
+        StopF()
+    catch
+        _ : _ ->
+            ok
+    end,
+    receive
+        {'DOWN', MRef, _, _, _} ->
+            ok
+    after
+        Timeout ->
+            exit(Pid, kill)
+    end.
+
+handle_puback(Ack) ->
+    io:format("Recv a PUBACK packet - Ack: ~p~n", [Ack]).
+
+handle_disconnected(Reason) ->
+    io:format("Recv a DISONNECT packet - Reason: ~p~n", [Reason]).
+
+handle_publish(Parent, Msg) ->
+    io:format("Recv a PUBLISH packet - Msg: ~p~n", [Msg]),
+    Parent ! {self(), data_call}.
+
+get_handlers(Parent) ->
+    #{
+        puback => fun(Ack) -> handle_puback(Ack) end,
+        publish => fun(Msg) -> handle_publish(Parent, Msg) end,
+        disconnected => fun(Reason) -> handle_disconnected(Reason) end
+    }.
+
+subscribe_topics(ClientPid, Subscriptions) ->
+    lists:foreach(fun({Topic, Qos}) ->
+        case emqtt:subscribe(ClientPid, Topic, Qos) of
+            {ok, _, _} -> ok;
+            Error ->
+                throw(Error)
+        end
+                  end, Subscriptions).
+
+make_payload2() ->
+    Resp = #{
+        <<"mId">> => 74837483,
+        <<"devSn">> => <<"0537369409">>,
+        <<"productCode">> => null
+    },
+    Objective = #{
+        <<"devSn">> => <<"0291203302">>,
+        <<"productCode">> => <<"METER">>,
+        <<"sourceType">> => <<"TERMINAL">>,
+        <<"cmdType">> => <<"GET_RESPONSE">>
+    },
+    DataItem1 = #{
+        <<"dataItemId">> => <<"2001-10200-000">>,
+        <<"dataItemName">> => <<"当前电流">>
+    },
+    DataItem2 = #{
+        <<"dataItemId">> => <<"0010-10201-400">>,
+        <<"dataItemName">> => <<"日冻结正向有功总电能">>
+    },
+    NewDataItem1 = DataItem1#{<<"dataReturnTime">> => get_datetime(), <<"dataValue">> => get_date_value1()},
+    NewDataItem2 = DataItem2#{<<"dataReturnTime">> => get_datetime(), <<"dataValue">> => get_date_value2()},
+    Objective1 = Objective#{<<"dataItemList">> => [NewDataItem1, NewDataItem2]},
+    Resp1 = Resp#{<<"objectiveList">> => [Objective1]},
+%%    jiffy:encode(Resp1, [force_utf8]).
+    jsx:encode(Resp1).
+
+get_date_value1() ->
+    lists:map(fun(_) -> list_to_float(float_to_list(rand:uniform(), [{decimals,1}])) end,
+        lists:seq(1, 3)).
+
+get_date_value2() ->
+    rand:uniform(100).
