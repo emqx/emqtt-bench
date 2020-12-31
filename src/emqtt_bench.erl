@@ -24,8 +24,7 @@
         , loop/4
         ]).
 
--exprot([ start_nari_client/1
-        , start_client/1 ]).
+-export([ start_nari_client/1 ]).
 
 -define(PUB_OPTS,
         [{help, undefined, "help", boolean,
@@ -109,8 +108,6 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"}
-        %  {sim_cli, undefined, "sim_client", {boolean, false},
-        %   "nari simulation client"}
         ]).
 
 -define(CONN_OPTS, [
@@ -145,12 +142,38 @@
           "local ipaddress or interface address"}
         ]).
 
+-define(CLI_OPTS, [
+        {help, undefined, "help", boolean,
+            "help information"},
+        {host, $h, "host", {string, "localhost"},
+            "mqtt server hostname or IP address"},
+        {port, $p, "port", {integer, 1883},
+            "mqtt server port number"},
+        {version, $V, "version", {integer, 5},
+            "mqtt protocol version: 3 | 4 | 5"},
+        {username, $u, "username", string,
+            "username for connecting to server"},
+        {password, $P, "password", string,
+            "password for connecting to server"},
+        {sub_topics, undefined, "sub_topics", string,
+            "subscription topics"},
+        {pub_topic, undefined, "pub_topic", string,
+            "publication topic"},
+        {qos, undefined, "qos", {integer, 0},
+            "qos"}
+    ]).
+
 -define(TAB, ?MODULE).
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
 
-main(["nari_client"| Argv]) ->
-    start_nari_client(Argv);
+main(["cli"|Argv]) ->
+    {ok, {Opts, _Args}} = getopt:parse(?CLI_OPTS, Argv),
+    ok = maybe_help(cli, Opts),
+    ok = check_required_args(sub, [host, port, username, password, sub_topics, pub_topic], Opts),
+    SimOpts = make_sim_opts(Opts),
+    io:format("--------- opts: ~p~n", [SimOpts]),
+    spawn(?MODULE, start_nari_client, [SimOpts]);
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -173,7 +196,7 @@ main(["conn"|Argv]) ->
 main(_Argv) ->
     ScriptPath = escript:script_name(),
     Script = filename:basename(ScriptPath),
-    io:format("Usage: ~s pub | sub | conn [--help]~n", [Script]).
+    io:format("Usage: ~s pub | sub | conn | cli [--help]~n", [Script]).
 
 maybe_help(PubSub, Opts) ->
     case proplists:get_value(help, Opts) of
@@ -200,7 +223,8 @@ usage(PubSub) ->
     Opts = case PubSub of
                pub -> ?PUB_OPTS;
                sub -> ?SUB_OPTS;
-               conn -> ?CONN_OPTS
+               conn -> ?CONN_OPTS;
+               cli -> ?CLI_OPTS
            end,
     getopt:usage(Opts, Script ++ " " ++ atom_to_list(PubSub)).
 
@@ -529,19 +553,25 @@ get_date_value() ->
     pub_topic
 }).
 
-
-start_nari_client([Username, Password, Host, Port, SubTopics, PubTopic]) ->
-    Opts = #sim_opts{
+make_sim_opts(Opts) ->
+    Host = proplists:get_value(host, Opts),
+    Port = proplists:get_value(port, Opts),
+    Username = l2b(proplists:get_value(username, Opts)),
+    Password = l2b(proplists:get_value(password, Opts)),
+    Qos = proplists:get_value(qos, Opts),
+    SubTopics = lists:map(fun(X) -> {string:trim(X), Qos} end,
+        string:split(proplists:get_value(sub_topics, Opts), ",")),
+    PubTopic = proplists:get_value(pub_topic, Opts),
+    #sim_opts{
         username = Username,
         password = Password,
         host = Host,
         port = Port,
         sub_topics = SubTopics,
         pub_topic = PubTopic
-    },
-    spawn(?MODULE, start_client, [Opts]).
+    }.
 
-start_client(Opts = #sim_opts{}) ->
+start_nari_client(Opts = #sim_opts{}) ->
     Parent = erlang:self(),
     Handlers = get_handlers(Parent),
     ClientConfig = #{msg_handler => Handlers,
@@ -557,7 +587,7 @@ start_client(Opts = #sim_opts{}) ->
                 {ok, _} ->
                     try
                         subscribe_topics(ConnPid,  Opts#sim_opts.sub_topics),
-                        loop(ConnPid, Opts#sim_opts.pub_topic),
+                        loop_(ConnPid, Opts#sim_opts.pub_topic),
                         {ok, ConnPid}
                     catch
                         throw : Reason ->
@@ -573,7 +603,7 @@ start_client(Opts = #sim_opts{}) ->
             {error, Reason}
     end.
 
-loop(ConnPid, PubTopic) ->
+loop_(ConnPid, PubTopic) ->
     receive
         {ConnPid, data_call} ->
             Payload = make_payload2(),
@@ -581,7 +611,7 @@ loop(ConnPid, PubTopic) ->
         _ ->
             ok
     end,
-    loop(ConnPid, PubTopic).
+    loop_(ConnPid, PubTopic).
 
 stop(Pid) ->
     safe_stop(Pid, fun() -> emqtt:stop(Pid) end, 1000),
@@ -623,7 +653,7 @@ get_handlers(Parent) ->
 
 subscribe_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, Qos}) ->
-        case emqtt:subscribe(ClientPid, Topic, Qos) of
+        case emqtt:subscribe(list_to_binary(ClientPid), Topic, Qos) of
             {ok, _, _} -> ok;
             Error ->
                 throw(Error)
@@ -663,3 +693,5 @@ get_date_value1() ->
 
 get_date_value2() ->
     rand:uniform(100).
+
+l2b(L) -> list_to_binary(L).
