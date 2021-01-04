@@ -21,7 +21,7 @@
         , start/2
         , run/3
         , connect/4
-        , loop/4
+        , loop/6
         ]).
 
 -export([ start_nari_client/1 ]).
@@ -69,8 +69,10 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {file, $f, "file", string,
-          "payload json file"}
-        ]).
+          "payload json file"},
+         {limit, $l, "limit", {integer, 1000},
+          "The max message count to publish, 0 means unlimited"}
+    ]).
 
 -define(SUB_OPTS,
         [{help, undefined, "help", boolean,
@@ -107,7 +109,9 @@
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {limit, $l, "limit", {integer, 1000},
+                "The max message count to subscrip, 0 means unlimited"}
         ]).
 
 -define(CONN_OPTS, [
@@ -139,8 +143,10 @@
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
-        ]).
+          "local ipaddress or interface address"},
+         {limit, $l, "limit", {integer, 1000},
+          "The max count to connect, 0 means unlimited"}
+]).
 
 -define(CLI_OPTS, [
         {help, undefined, "help", boolean,
@@ -171,9 +177,10 @@ main(["cli"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?CLI_OPTS, Argv),
     ok = maybe_help(cli, Opts),
     ok = check_required_args(sub, [host, port, username, password, sub_topics, pub_topic], Opts),
+    prepare() ,
     SimOpts = make_sim_opts(Opts),
-    io:format("--------- opts: ~p~n", [SimOpts]),
-    spawn(?MODULE, start_nari_client, [SimOpts]);
+    spawn(?MODULE, start_nari_client, [SimOpts]),
+    main(cli, Opts);
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -239,7 +246,10 @@ main(pub, Opts) ->
     start(pub, [{payload, Payload} | Opts]);
 
 main(conn, Opts) ->
-    start(conn, Opts).
+    start(conn, Opts);
+
+main(cli, _Opts) ->
+    main_loop().
 
 start(PubSub, Opts) ->
     prepare(), init(),
@@ -256,11 +266,21 @@ init() ->
     put({stats, recv}, 0),
     put({stats, sent}, 0).
 
+main_loop() ->
+    receive
+        stop ->
+            io:format("stop bench\n");
+        _ ->
+            main_loop()
+    end.
+
 main_loop(Uptime, Count) ->
     receive
         {connected, _N, _Client} ->
             return_print("connected: ~w", [Count]),
             main_loop(Uptime, Count+1);
+        stop ->
+            io:format("stop bench\n");
         stats ->
             print_stats(Uptime),
             main_loop(Uptime, Count);
@@ -330,6 +350,7 @@ run(Parent, N, PubSub, Opts) ->
 	run(Parent, N-1, PubSub, Opts).
 
 connect(Parent, N, PubSub, Opts) ->
+    L = proplists:get_value(limit, Opts),
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
     ClientId = client_id(PubSub, N, Opts),
@@ -355,12 +376,15 @@ connect(Parent, N, PubSub, Opts) ->
                    Interval = proplists:get_value(interval_of_msg, Opts),
                    timer:send_interval(Interval, publish)
             end,
-            loop(N, Client, PubSub, AllOpts);
+            loop(Parent, L, N, Client, PubSub, AllOpts);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error])
     end.
 
-loop(N, Client, PubSub, Opts) ->
+loop(Parent, 0, N, _Client, _PubSub, _Opts) ->
+    io:format("client(~w): EXIT~n", [N]),
+    Parent ! stop;
+loop(_Parent, L, N, Client, PubSub, Opts) when L > 0 ->
     receive
         publish ->
             case publish(Client, Opts) of
@@ -370,13 +394,13 @@ loop(N, Client, PubSub, Opts) ->
                 {error, Reason} ->
                     io:format("client(~w): publish error - ~p~n", [N, Reason])
             end,
-            loop(N, Client, PubSub, Opts);
+            loop(_Parent, L - 1, N, Client, PubSub, Opts);
         {publish, _Publish} ->
             inc_counter(recv),
-            loop(N, Client, PubSub, Opts);
+            loop(_Parent, L - 1, N, Client, PubSub, Opts);
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
-	end.
+    end.
 
 subscribe(Client, Opts) ->
     Qos = proplists:get_value(qos, Opts),
@@ -653,12 +677,12 @@ get_handlers(Parent) ->
 
 subscribe_topics(ClientPid, Subscriptions) ->
     lists:foreach(fun({Topic, Qos}) ->
-        case emqtt:subscribe(list_to_binary(ClientPid), Topic, Qos) of
-            {ok, _, _} -> ok;
-            Error ->
-                throw(Error)
-        end
-                  end, Subscriptions).
+            case emqtt:subscribe(ClientPid, l2b(Topic), Qos) of
+                {ok, _, _} -> ok;
+                Error ->
+                    throw(Error)
+            end
+      end, Subscriptions).
 
 make_payload2() ->
     Resp = #{
@@ -684,7 +708,6 @@ make_payload2() ->
     NewDataItem2 = DataItem2#{<<"dataReturnTime">> => get_datetime(), <<"dataValue">> => get_date_value2()},
     Objective1 = Objective#{<<"dataItemList">> => [NewDataItem1, NewDataItem2]},
     Resp1 = Resp#{<<"objectiveList">> => [Objective1]},
-%%    jiffy:encode(Resp1, [force_utf8]).
     jsx:encode(Resp1).
 
 get_date_value1() ->

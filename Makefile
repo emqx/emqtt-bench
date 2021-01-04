@@ -9,6 +9,9 @@ all: compile
 compile: $(REBAR) unlock
 	$(REBAR) compile
 
+rel:
+	$(REBAR) release
+
 .PHONY: unlock
 unlock:
 	$(REBAR) unlock
