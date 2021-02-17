@@ -303,7 +303,7 @@ connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
     ClientId = client_id(PubSub, N, Opts),
-    MqttOpts = [{client_id, ClientId},
+    MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}
                | mqtt_opts(Opts)],
