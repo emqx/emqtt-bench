@@ -19,7 +19,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
                         [-i [<interval>]] [-u <username>] [-P <password>]
                         [-k [<keepalive>]] [-C [<clean>]] [-S [<ssl>]]
                         [--certfile <certfile>] [--keyfile <keyfile>]
-                        [--ifaddr <ifaddr>]
+                        [--ifaddr <ifaddr>] [--prefix <prefix>]
 
   --help             help information
   -h, --host         mqtt server hostname or IP address [default:
@@ -39,6 +39,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
   --keyfile          client private key for authentication, if required by
                      server
   --ifaddr           local ipaddress or interface address
+  --prefix           client id prefix
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
@@ -58,7 +59,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-P <password>] [-k [<keepalive>]] [-C [<clean>]]
                        [-S [<ssl>]] [--certfile <certfile>]
                        [--keyfile <keyfile>] [--ws [<ws>]]
-                       [--ifaddr <ifaddr>]
+                       [--ifaddr <ifaddr>] [--prefix <prefix>]
 
   --help             help information
   -h, --host         mqtt server hostname or IP address [default: localhost]
@@ -78,6 +79,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   --keyfile          client private key for authentication, if required by server
   --ws               websocket transport [default: false]
   --ifaddr           local ipaddress or interface address
+  --prefix           client id prefix
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec: 
@@ -98,7 +100,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-q [<qos>]] [-r [<retain>]] [-k [<keepalive>]]
                        [-C [<clean>]] [-S [<ssl>]]
                        [--certfile <certfile>] [--keyfile <keyfile>]
-                       [--ws [<ws>]] [--ifaddr <ifaddr>]
+                       [--ws [<ws>]] [--ifaddr <ifaddr>] [--prefix <prefix>]
 
   --help                 help information
   -h, --host             mqtt server hostname or IP address [default: localhost]
@@ -122,6 +124,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   --keyfile              client private key for authentication, if required by server
   --ws                   websocket transport [default: false]
   --ifaddr               local ipaddress or interface address
+  --prefix               client id prefix
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
