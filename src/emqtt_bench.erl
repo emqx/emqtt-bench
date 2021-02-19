@@ -67,7 +67,8 @@
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {prefix, undefined, "prefix", string, "client id prefix"}
         ]).
 
 -define(SUB_OPTS,
@@ -105,7 +106,8 @@
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {prefix, undefined, "prefix", string, "client id prefix"}
         ]).
 
 -define(CONN_OPTS, [
@@ -137,7 +139,8 @@
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"}
+          "local ipaddress or interface address"},
+         {prefix, undefined, "prefix", string, "client id prefix"}
         ]).
 
 -define(TAB, ?MODULE).
@@ -444,8 +447,14 @@ client_id(PubSub, N, Opts) ->
         IfAddr    ->
             IfAddr
     end,
-    list_to_binary(lists:concat([Prefix, "_bench_", atom_to_list(PubSub),
-                                    "_", N, "_", rand:uniform(16#FFFFFFFF)])).
+    case proplists:get_value(prefix, Opts) of
+        undefined ->
+            list_to_binary(lists:concat([Prefix, "_bench_", atom_to_list(PubSub),
+                                    "_", N, "_", rand:uniform(16#FFFFFFFF)]));
+        Val ->
+            list_to_binary(lists:concat([Val, "_bench_", atom_to_list(PubSub),
+                                    "_", N]))
+    end.
 
 topics_opt(Opts) ->
     Topics = topics_opt(Opts, []),
