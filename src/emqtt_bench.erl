@@ -359,6 +359,9 @@ loop(Parent, N, Client, PubSub, Opts) ->
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
+    after
+        15000 ->
+            proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
 
 consumer_pub_msg_fun_init(0) ->
