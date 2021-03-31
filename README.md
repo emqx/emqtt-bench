@@ -75,6 +75,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   -k, --keepalive    keep alive in seconds [default: 300]
   -C, --clean        clean start [default: true]
   -S, --ssl          ssl socoket for connecting to server [default: false]
+  -Q, --quic         QUIC transport [default: false]
   --certfile         client certificate for authentication, if required by server
   --keyfile          client private key for authentication, if required by server
   --ws               websocket transport [default: false]

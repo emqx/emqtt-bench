@@ -60,6 +60,8 @@
           "The max message count to publish, 0 means unlimited"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+         {quic, $Q, "quic", {boolean, false},
+          "QUIC as transport"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -99,6 +101,8 @@
           "clean start"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+         {quic, $Q, "quic", {boolean, false},
+          "QUIC as transport"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -134,6 +138,8 @@
           "clean session"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+        {quic, $Q, "quic", {boolean, false},
+          "QUIC as transport"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -316,10 +322,12 @@ connect(Parent, N, PubSub, Opts) ->
                 end,
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts1),
-    ConnRet = case proplists:get_bool(ws, Opts) of
-                  true  -> 
+    ConnRet = case {proplists:get_bool(ws, Opts), proplists:get_bool(quic, Opts)} of
+                  {true, false}  ->
                       emqtt:ws_connect(Client);
-                  false -> emqtt:connect(Client)
+                  {false, true} ->
+                      emqtt:quic_connect(Client);
+                  {false, false} -> emqtt:connect(Client)
               end,
     case ConnRet of
         {ok, _Props} ->
