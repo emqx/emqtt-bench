@@ -69,7 +69,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(SUB_OPTS,
@@ -109,7 +109,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(CONN_OPTS, [
@@ -143,7 +143,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(TAB, ?MODULE).
