@@ -68,7 +68,8 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
         ]).
 
 -define(SUB_OPTS,
@@ -107,7 +108,8 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
         ]).
 
 -define(CONN_OPTS, [
@@ -140,7 +142,8 @@
           "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, trade with CPU resource"}
         ]).
 
 -define(TAB, ?MODULE).
@@ -351,8 +354,14 @@ run(Parent, PubSub, Opts) ->
 run(_Parent, 0, _PubSub, _Opts) ->
     done;
 run(Parent, N, PubSub, Opts) ->
+    SpawnOpts = case proplists:get_bool(lowmem, Opts) of
+                    true ->
+                        [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
+                    false ->
+                        []
+                end,
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-              [{min_heap_size, 16}, {min_bin_vheap_size, 16}]),
+             SpawnOpts),
 	timer:sleep(proplists:get_value(interval, Opts)),
 	run(Parent, N-1, PubSub, Opts).
 
@@ -368,7 +377,8 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    AllOpts  = [{low_mem, true}, {seq, N}, {client_id, ClientId} | Opts],
+    IsLowMem = proplists:get_bool(lowmem, Opts),
+    AllOpts  = [{low_mem, IsLowMem}, {seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts1),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
@@ -490,9 +500,13 @@ mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
 tcp_opts(Opts) ->
-    tcp_opts(Opts, []).
+    InitOpts = case proplists:get_bool(lowmem, Opts) of
+                   true -> [{recbuf, 64} , {sndbuf, 64}];
+                   false -> []
+               end,
+    tcp_opts(Opts, InitOpts).
 tcp_opts([], Acc) ->
-    [{recbuf, 64} , {sndbuf, 64} | Acc];
+    Acc;
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     {ok, IpAddr} = inet_parse:address(IfAddr),
     tcp_opts(Opts, [{ip, IpAddr}|Acc]);
