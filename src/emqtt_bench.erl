@@ -379,7 +379,7 @@ connect(Parent, N, PubSub, Opts) ->
                 end,
     IsLowMem = proplists:get_bool(lowmem, Opts),
     AllOpts  = [{low_mem, IsLowMem}, {seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link(MqttOpts1),
+	{ok, Client} = emqtt:start_link([{low_mem, IsLowMem} | MqttOpts1]),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
                       emqtt:ws_connect(Client);
