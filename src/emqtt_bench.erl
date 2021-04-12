@@ -67,7 +67,7 @@
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
-          "local ipaddress or interface address"},
+          "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"}
         ]).
 
@@ -146,6 +146,10 @@
 -define(TAB, ?MODULE).
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
+-define(IDX_SUB, 3).
+-define(IDX_SUB_FAIL, 4).
+-define(IDX_PUB, 5).
+-define(IDX_PUB_FAIL, 6).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -206,7 +210,6 @@ main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
     Payload = iolist_to_binary([O || O <- lists:duplicate(Size, $a)]),
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
-
     start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
 
 main(conn, Opts) ->
@@ -214,7 +217,34 @@ main(conn, Opts) ->
 
 start(PubSub, Opts) ->
     prepare(), init(),
-    spawn(?MODULE, run, [self(), PubSub, Opts]),
+    IfAddr = proplists:get_value(ifaddr, Opts),
+    AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
+                    false ->
+                        [IfAddr];
+                    true ->
+                       string:tokens(IfAddr, ",")
+                end,
+    NoWorkers = length(AddrList),
+    Count = proplists:get_value(count, Opts),
+    CntPerWorker = Count div NoWorkers,
+    Rem = Count rem NoWorkers,
+    Interval = proplists:get_value(interval, Opts) * NoWorkers,
+    MsgInterval = proplists:get_value(interval_of_msg, Opts, 1000) * NoWorkers,
+    lists:foreach(fun(P) ->
+                          StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*P,
+                          CountParm = case Rem =/= 0 andalso P == 1 of
+                                          true ->
+                                              [{count, CntPerWorker + Rem}];
+                                          false ->
+                                              [{count, CntPerWorker}]
+                                      end,
+                          WOpts = replace_opts(Opts, [{startnumber, StartNumber},
+                                                      {ifaddr, lists:nth(P, AddrList)},
+                                                      {interval_of_msg, MsgInterval},
+                                                      {interval, Interval}
+                                                     ] ++ CountParm),
+                          spawn(?MODULE, run, [self(), PubSub, WOpts])
+                  end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
     main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
 
@@ -222,6 +252,7 @@ prepare() ->
     application:ensure_all_started(emqtt_bench).
 
 init() ->
+    process_flag(trap_exit, true),
     CRef = counters:new(4, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
@@ -287,7 +318,16 @@ get_counter(recv) ->
 inc_counter(sent) ->
     counters:add(cnt_ref(), ?IDX_SENT, 1);
 inc_counter(recv) ->
-    counters:add(cnt_ref(), ?IDX_RECV, 1).
+    counters:add(cnt_ref(), ?IDX_RECV, 1);
+inc_counter(sub) ->
+    counters:add(cnt_ref(), ?IDX_SUB, 1);
+inc_counter(sub_fail) ->
+    counters:add(cnt_ref(), ?IDX_SUB_FAIL, 1);
+inc_counter(pub) ->
+    counters:add(cnt_ref(), ?IDX_PUB, 1);
+inc_counter(pub_fail) ->
+    counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1).
+
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -360,7 +400,8 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
     after
-        15000 ->
+        500 ->
+            erlang:garbage_collect(),
             proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
 
@@ -379,13 +420,29 @@ consumer_pub_msg_fun_init(N) when is_integer(N), N > 0 ->
 
 subscribe(Client, Opts) ->
     Qos = proplists:get_value(qos, Opts),
-    emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]).
+    Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
+    case Res of
+        {ok, _, _} ->
+            inc_counter(sub);
+        {error, _Reason} ->
+            inc_counter(sub_fail)
+    end,
+    Res.
 
 publish(Client, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
-    emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
+    Res = emqtt:publish(Client, topic_opt(Opts), Payload, Flags),
+    case Res of
+        ok ->
+            inc_counter(pub);
+        {ok,_} ->
+            inc_counter(pub);
+        {error, _} ->
+            inc_counter(pub_fail)
+    end,
+    Res.
 
 mqtt_opts(Opts) ->
     mqtt_opts(Opts, []).
@@ -461,7 +518,6 @@ client_id(PubSub, N, Opts) ->
 
 topics_opt(Opts) ->
     Topics = topics_opt(Opts, []),
-    io:format("Topics: ~p~n", [Topics]),
     [feed_var(bin(Topic), Opts) || Topic <- Topics].
 
 topics_opt([], Acc) ->
@@ -479,7 +535,7 @@ feed_var(Topic, Opts) when is_binary(Topic) ->
                 [{seq, <<"%i">>}, {client_id, <<"%c">>}, {username, <<"%u">>}]],
     lists:foldl(fun({_Var, undefined}, Acc) -> Acc;
                    ({Var, Val}, Acc) -> feed_var(Var, Val, Acc)
-        end, Topic, Props).
+                end, Topic, Props).
 
 feed_var(Var, Val, Topic) ->
     feed_var(Var, Val, words(Topic), []).
@@ -517,3 +573,7 @@ bin(S) when is_list(S)   -> list_to_binary(S);
 bin(B) when is_binary(B) -> B;
 bin(undefined)           -> undefined.
 
+replace_opts(Opts, NewOpts) ->
+    lists:foldl(fun({K, _V} = This, Acc) ->
+                        lists:keyreplace(K, 1, Acc, This)
+                end , Opts, NewOpts).

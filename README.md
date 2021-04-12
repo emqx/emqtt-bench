@@ -38,7 +38,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
                      server
   --keyfile          client private key for authentication, if required by
                      server
-  --ifaddr           local ipaddress or interface address
+  --ifaddr           One or multiple (comma-separated) source IP addresses
   --prefix           client id prefix
 ```
 
@@ -123,7 +123,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   --certfile             client certificate for authentication, if required by server
   --keyfile              client private key for authentication, if required by server
   --ws                   websocket transport [default: false]
-  --ifaddr               local ipaddress or interface address
+  --ifaddr               One or multiple (comma-separated) source IP addresses
   --prefix               client id prefix
 ```
 
@@ -155,7 +155,17 @@ For example, create 100 connections and each publishes messages at the rate of 1
 
 ## Notice
 
-You should not set '-c' option more than 60K for TCP ports limit on one interface.
+You should not set '-c' option more than 64K for TCP ports limit on one source addresses, 
+however you can send messages from multiple source IP Addresses with '--ifaddr ' such like
+
+./emqtt_bench sub -c 200000 -t "perf/test" --ifaddr 192.168.200.18,192.168.200.19,192.168.200.20,192.168.200.21
+
+ensure you ulimit the fds and expand the port range like following on Linux.
+
+``` sh
+ulimit -n 200000
+sudo sysctl -w net.ipv4.ip_local_port_range="1025 65534"
+```
 
 ## Author
 
