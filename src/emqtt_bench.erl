@@ -256,7 +256,12 @@ init() ->
     CRef = counters:new(4, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
-    put({stats, sent}, 0).
+    put({stats, sent}, 0),
+    put({stats, pub}, 0),
+    put({stats, pub_fail}, 0),
+    put({stats, sub_fail}, 0),
+    put({stats, sub}, 0).
+
 
 main_loop(Uptime, Count) ->
     receive
@@ -313,7 +318,15 @@ maybe_feed(_, _) -> ok.
 get_counter(sent) ->
     counters:get(cnt_ref(), ?IDX_SENT);
 get_counter(recv) ->
-    counters:get(cnt_ref(), ?IDX_RECV).
+    counters:get(cnt_ref(), ?IDX_RECV);
+get_counter(sub) ->
+    counters:get(cnt_ref(), ?IDX_SUB);
+get_counter(pub) ->
+    counters:get(cnt_ref(), ?IDX_PUB);
+get_counter(sub_fail) ->
+    counters:get(cnt_ref(), ?IDX_SUB_FAIL);
+get_counter(pub_fail) ->
+    counters:get(cnt_ref(), ?IDX_PUB_FAIL).
 
 inc_counter(sent) ->
     counters:add(cnt_ref(), ?IDX_SENT, 1);
@@ -338,7 +351,8 @@ run(Parent, PubSub, Opts) ->
 run(_Parent, 0, _PubSub, _Opts) ->
     done;
 run(Parent, N, PubSub, Opts) ->
-    spawn(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts]),
+    spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
+              [{min_heap_size, 16}, {min_bin_vheap_size, 16}]),
 	timer:sleep(proplists:get_value(interval, Opts)),
 	run(Parent, N-1, PubSub, Opts).
 
@@ -354,7 +368,7 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
+    AllOpts  = [{low_mem, true}, {seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts1),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
@@ -389,20 +403,21 @@ loop(Parent, N, Client, PubSub, Opts) ->
                         {error, Reason} ->
                             io:format("client(~w): publish error - ~p~n", [N, Reason])
                     end,
-                    loop(Parent, N, Client, PubSub, Opts);
+                    loop(Parent, N, Client, PubSub, loop_opts(PubSub, Opts));
                 _ ->
                     Parent ! publish_complete,
                     exit(normal)
             end;
         {publish, _Publish} ->
             inc_counter(recv),
-            loop(Parent, N, Client, PubSub, Opts);
+            loop(Parent, N, Client, PubSub, loop_opts(PubSub, Opts));
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
     after
         500 ->
-            erlang:garbage_collect(),
-            proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
+            erlang:garbage_collect(Client, [{type, major}]),
+            erlang:garbage_collect(self(), [{type, major}]),
+            proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, loop_opts(PubSub, Opts)])
 	end.
 
 consumer_pub_msg_fun_init(0) ->
@@ -477,7 +492,7 @@ mqtt_opts([_|Opts], Acc) ->
 tcp_opts(Opts) ->
     tcp_opts(Opts, []).
 tcp_opts([], Acc) ->
-    Acc;
+    [{recbuf, 64} , {sndbuf, 64} | Acc];
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     {ok, IpAddr} = inet_parse:address(IfAddr),
     tcp_opts(Opts, [{ip, IpAddr}|Acc]);
@@ -577,3 +592,11 @@ replace_opts(Opts, NewOpts) ->
     lists:foldl(fun({K, _V} = This, Acc) ->
                         lists:keyreplace(K, 1, Acc, This)
                 end , Opts, NewOpts).
+
+%% trim opts to save proc stack mem.
+loop_opts(publish, Opts) ->
+    lists:filter(fun({K,__V}) ->
+                         lists:member(K, [payload, qos, retain, topic])
+                 end, Opts);
+loop_opts(_, _) ->
+    [].
