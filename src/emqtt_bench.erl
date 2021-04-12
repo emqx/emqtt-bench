@@ -377,9 +377,8 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    IsLowMem = proplists:get_bool(lowmem, Opts),
-    AllOpts  = [{low_mem, IsLowMem}, {seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link([{low_mem, IsLowMem} | MqttOpts1]),
+    AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
+	{ok, Client} = emqtt:start_link(MqttOpts1),
     ConnRet = case proplists:get_bool(ws, Opts) of
                   true  -> 
                       emqtt:ws_connect(Client);
@@ -501,17 +500,17 @@ mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
 mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
+mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
+    mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
 tcp_opts(Opts) ->
-    InitOpts = case proplists:get_bool(lowmem, Opts) of
-                   true -> [{recbuf, 64} , {sndbuf, 64}];
-                   false -> []
-               end,
-    tcp_opts(Opts, InitOpts).
+    tcp_opts(Opts, []).
 tcp_opts([], Acc) ->
     Acc;
+tcp_opts([{lowmem, true} | Opts], Acc) ->
+    tcp_opts(Opts, [{recbuf, 64} , {sndbuf, 64} | Acc]);
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     {ok, IpAddr} = inet_parse:address(IfAddr),
     tcp_opts(Opts, [{ip, IpAddr}|Acc]);
