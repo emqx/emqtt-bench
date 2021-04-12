@@ -396,7 +396,7 @@ connect(Parent, N, PubSub, Opts) ->
                    Interval = proplists:get_value(interval_of_msg, Opts),
                    timer:send_interval(Interval, publish)
             end,
-            loop(Parent, N, Client, PubSub, AllOpts);
+            loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error])
     end.
@@ -413,21 +413,26 @@ loop(Parent, N, Client, PubSub, Opts) ->
                         {error, Reason} ->
                             io:format("client(~w): publish error - ~p~n", [N, Reason])
                     end,
-                    loop(Parent, N, Client, PubSub, loop_opts(PubSub, Opts));
+                    loop(Parent, N, Client, PubSub, Opts);
                 _ ->
                     Parent ! publish_complete,
                     exit(normal)
             end;
         {publish, _Publish} ->
             inc_counter(recv),
-            loop(Parent, N, Client, PubSub, loop_opts(PubSub, Opts));
+            loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
     after
         500 ->
-            erlang:garbage_collect(Client, [{type, major}]),
-            erlang:garbage_collect(self(), [{type, major}]),
-            proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, loop_opts(PubSub, Opts)])
+            case proplists:get_bool(lowmem, Opts) of
+                true ->
+                    erlang:garbage_collect(Client, [{type, major}]),
+                    erlang:garbage_collect(self(), [{type, major}]);
+                false ->
+                    skip
+            end,
+            proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
 
 consumer_pub_msg_fun_init(0) ->
@@ -608,9 +613,7 @@ replace_opts(Opts, NewOpts) ->
                 end , Opts, NewOpts).
 
 %% trim opts to save proc stack mem.
-loop_opts(publish, Opts) ->
+loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
-                         lists:member(K, [payload, qos, retain, topic])
-                 end, Opts);
-loop_opts(_, _) ->
-    [].
+                         lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun])
+                 end, Opts).
