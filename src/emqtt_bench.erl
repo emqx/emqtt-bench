@@ -68,7 +68,8 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(SUB_OPTS,
@@ -107,7 +108,8 @@
           "websocket transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(CONN_OPTS, [
@@ -140,7 +142,8 @@
           "client private key for authentication, if required by server"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"}
+         {prefix, undefined, "prefix", string, "client id prefix"},
+         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(TAB, ?MODULE).
@@ -256,7 +259,12 @@ init() ->
     CRef = counters:new(4, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
-    put({stats, sent}, 0).
+    put({stats, sent}, 0),
+    put({stats, pub}, 0),
+    put({stats, pub_fail}, 0),
+    put({stats, sub_fail}, 0),
+    put({stats, sub}, 0).
+
 
 main_loop(Uptime, Count) ->
     receive
@@ -313,7 +321,15 @@ maybe_feed(_, _) -> ok.
 get_counter(sent) ->
     counters:get(cnt_ref(), ?IDX_SENT);
 get_counter(recv) ->
-    counters:get(cnt_ref(), ?IDX_RECV).
+    counters:get(cnt_ref(), ?IDX_RECV);
+get_counter(sub) ->
+    counters:get(cnt_ref(), ?IDX_SUB);
+get_counter(pub) ->
+    counters:get(cnt_ref(), ?IDX_PUB);
+get_counter(sub_fail) ->
+    counters:get(cnt_ref(), ?IDX_SUB_FAIL);
+get_counter(pub_fail) ->
+    counters:get(cnt_ref(), ?IDX_PUB_FAIL).
 
 inc_counter(sent) ->
     counters:add(cnt_ref(), ?IDX_SENT, 1);
@@ -338,7 +354,14 @@ run(Parent, PubSub, Opts) ->
 run(_Parent, 0, _PubSub, _Opts) ->
     done;
 run(Parent, N, PubSub, Opts) ->
-    spawn(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts]),
+    SpawnOpts = case proplists:get_bool(lowmem, Opts) of
+                    true ->
+                        [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
+                    false ->
+                        []
+                end,
+    spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
+             SpawnOpts),
 	timer:sleep(proplists:get_value(interval, Opts)),
 	run(Parent, N-1, PubSub, Opts).
 
@@ -372,7 +395,7 @@ connect(Parent, N, PubSub, Opts) ->
                    Interval = proplists:get_value(interval_of_msg, Opts),
                    timer:send_interval(Interval, publish)
             end,
-            loop(Parent, N, Client, PubSub, AllOpts);
+            loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error])
     end.
@@ -401,7 +424,13 @@ loop(Parent, N, Client, PubSub, Opts) ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
     after
         500 ->
-            erlang:garbage_collect(),
+            case proplists:get_bool(lowmem, Opts) of
+                true ->
+                    erlang:garbage_collect(Client, [{type, major}]),
+                    erlang:garbage_collect(self(), [{type, major}]);
+                false ->
+                    skip
+            end,
             proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
 
@@ -471,6 +500,8 @@ mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
 mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
+mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
+    mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
@@ -478,6 +509,8 @@ tcp_opts(Opts) ->
     tcp_opts(Opts, []).
 tcp_opts([], Acc) ->
     Acc;
+tcp_opts([{lowmem, true} | Opts], Acc) ->
+    tcp_opts(Opts, [{recbuf, 64} , {sndbuf, 64} | Acc]);
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     {ok, IpAddr} = inet_parse:address(IfAddr),
     tcp_opts(Opts, [{ip, IpAddr}|Acc]);
@@ -577,3 +610,9 @@ replace_opts(Opts, NewOpts) ->
     lists:foldl(fun({K, _V} = This, Acc) ->
                         lists:keyreplace(K, 1, Acc, This)
                 end , Opts, NewOpts).
+
+%% trim opts to save proc stack mem.
+loop_opts(Opts) ->
+    lists:filter(fun({K,__V}) ->
+                         lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun])
+                 end, Opts).

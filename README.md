@@ -40,6 +40,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
                      server
   --ifaddr           One or multiple (comma-separated) source IP addresses
   --prefix           client id prefix
+  -l, --lowmem       low mem mode, but use more CPU 
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
@@ -80,6 +81,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   --ws               websocket transport [default: false]
   --ifaddr           local ipaddress or interface address
   --prefix           client id prefix
+  -l, --lowmem       low mem mode, but use more CPU
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec: 
@@ -125,6 +127,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   --ws                   websocket transport [default: false]
   --ifaddr               One or multiple (comma-separated) source IP addresses
   --prefix               client id prefix
+  -l, --lowmem       low mem mode, but use more CPU 
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
