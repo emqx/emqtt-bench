@@ -69,7 +69,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(SUB_OPTS,
@@ -109,7 +109,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(CONN_OPTS, [
@@ -143,10 +143,11 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, false, boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
         ]).
 
 -define(TAB, ?MODULE).
+-define(COUNTERS, 16).
 -define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
 -define(IDX_SUB, 3).
@@ -256,7 +257,7 @@ prepare() ->
 
 init() ->
     process_flag(trap_exit, true),
-    CRef = counters:new(4, [write_concurrency]),
+    CRef = counters:new(?COUNTERS, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
     put({stats, sent}, 0),
