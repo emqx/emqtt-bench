@@ -283,8 +283,9 @@ main_loop(Uptime, Count) ->
     end.
 
 print_stats(Uptime) ->
-    print_stats(Uptime, recv),
-    print_stats(Uptime, sent).
+    [print_stats(Uptime, Cnt) ||
+        Cnt <- [sent, recv, sub, pub, sub_fail, pub_fail]],
+    ok.
 
 print_stats(Uptime, Name) ->
     CurVal = get_counter(Name),
@@ -421,6 +422,8 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {publish, _Publish} ->
             inc_counter(recv),
             loop(Parent, N, Client, PubSub, Opts);
+        {'EXIT', Client, normal} ->
+            ok;
         {'EXIT', Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason])
     after
@@ -455,7 +458,8 @@ subscribe(Client, Opts) ->
         {ok, _, _} ->
             inc_counter(sub);
         {error, _Reason} ->
-            inc_counter(sub_fail)
+            inc_counter(sub_fail),
+            emqtt:disconnect(Client, sub_fail)
     end,
     Res.
 
