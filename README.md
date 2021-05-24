@@ -2,7 +2,7 @@
 
 `emqtt_bench` is a simple MQTT v5.0 benchmark tool written in Erlang.
 
-Requires Erlang/OTP R21.2+ to build.
+Requires Erlang/OTP 22.3+ to build.
 
 ## Build first
 
