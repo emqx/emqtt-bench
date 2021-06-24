@@ -13,3 +13,4 @@ rebar.lock
 log/
 _build/
 emqtt_bench
+rebar3

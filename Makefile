@@ -1,7 +1,7 @@
 
 REBAR = $(CURDIR)/rebar3
 
-REBAR_URL = https://s3.amazonaws.com/rebar3/rebar3
+REBAR_URL := https://github.com/emqx/rebar3/releases/download/3.14.3-emqx-7/rebar3
 
 .PHONY: all
 all: compile
