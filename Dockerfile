@@ -1,6 +1,6 @@
-FROM erlang:22.1-alpine
+FROM emqx/build-env:erl23.2.7.2-emqx-2-alpine-amd64
 COPY . /emqtt_bench
 WORKDIR /emqtt_bench
-RUN apk add git make && make
+RUN make
 ENTRYPOINT ["./emqtt_bench"]
 CMD [""]
