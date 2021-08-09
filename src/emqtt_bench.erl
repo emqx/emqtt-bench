@@ -619,5 +619,5 @@ replace_opts(Opts, NewOpts) ->
 %% trim opts to save proc stack mem.
 loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
-                         lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun])
+                         lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun, seq])
                  end, Opts).
