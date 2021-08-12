@@ -18,7 +18,7 @@ jobs:
       - uses: docker/metadata-action@v3
         id: meta
         with:
-          images: ghcr.io/1995parham/emqtt-bench
+          images: ghcr.io/${{ github.repository_owner }}/emqtt-bench
           tags: |
             type=ref,event=branch
             type=ref,event=pr
