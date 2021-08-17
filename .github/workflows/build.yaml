@@ -1,7 +1,10 @@
 ---
 name: build
 on:
-  - push
+  push:
+    tags:
+      - "*"
+      - "!v*"
 jobs:
   docker:
     name: docker
