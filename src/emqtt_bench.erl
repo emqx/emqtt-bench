@@ -259,6 +259,8 @@ start(PubSub, Opts) ->
     main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
 
 prepare() ->
+    Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
+    net_kernel:start([Sname, shortnames]),
     {ok, _} = application:ensure_all_started(quicer),
     application:ensure_all_started(emqtt_bench).
 
