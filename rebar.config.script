@@ -1,0 +1,28 @@
+IsCentos6 = fun() ->
+                case file:read_file("/etc/centos-release") of
+                    {ok, <<"CentOS release 6", _/binary >>} ->
+                        true;
+                    _ ->
+                        false
+                end
+            end,
+
+IsWin32 = fun() ->
+                win32 =:= element(1, os:type())
+          end,
+
+IsQuicSupp = fun() ->
+                not (IsCentos6() orelse IsWin32() orelse
+                     false =/= os:getenv("BUILD_WITHOUT_QUIC")
+                    )
+             end,
+
+Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.8"}}},
+ExtraDeps = fun(C) ->
+                {deps, Deps0} = lists:keyfind(deps, 1, C),
+                    Deps = Deps0 ++
+                        [ Quicer || IsQuicSupp() ],
+                lists:keystore(deps, 1, C, {deps, Deps})
+            end,
+
+ExtraDeps(CONFIG).

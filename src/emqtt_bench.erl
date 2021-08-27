@@ -66,6 +66,8 @@
           "client private key for authentication, if required by server"},
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
+         {quic, undefined, "quic", {boolean, false},
+          "QUIC transport"},
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -106,6 +108,8 @@
           "client private key for authentication, if required by server"},
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
+         {quic, undefined, "quic", {boolean, false},
+          "QUIC transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -140,6 +144,8 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
+         {quic, undefined, "quic", {boolean, false},
+          "QUIC transport"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -253,6 +259,7 @@ start(PubSub, Opts) ->
     main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
 
 prepare() ->
+    {ok, _} = application:ensure_all_started(quicer),
     application:ensure_all_started(emqtt_bench).
 
 init() ->
@@ -381,11 +388,8 @@ connect(Parent, N, PubSub, Opts) ->
                 end,
     AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
 	{ok, Client} = emqtt:start_link(MqttOpts1),
-    ConnRet = case proplists:get_bool(ws, Opts) of
-                  true  -> 
-                      emqtt:ws_connect(Client);
-                  false -> emqtt:connect(Client)
-              end,
+    ConnectFun = connect_fun(Opts),
+    ConnRet = emqtt:ConnectFun(Client),
     case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
@@ -536,6 +540,19 @@ ssl_opts([_|Opts], Acc) ->
 all_ssl_ciphers() ->
     Vers = ['tlsv1', 'tlsv1.1', 'tlsv1.2', 'tlsv1.3'],
     lists:usort(lists:concat([ssl:cipher_suites(all, Ver) || Ver <- Vers])).
+
+-spec connect_fun(proplists:proplist()) -> FunName :: atom().
+connect_fun(Opts)->
+    case {proplists:get_bool(ws, Opts), proplists:get_bool(quic, Opts)} of
+        {true, true} ->
+            throw({error, "unsupported transport: ws over quic "});
+        {true, false} ->
+            ws_connect;
+        {false, true} ->
+            quic_connect;
+        {false, false} ->
+            connect
+    end.
 
 client_id(PubSub, N, Opts) ->
     Prefix =
