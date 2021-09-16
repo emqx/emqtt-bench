@@ -13,4 +13,5 @@ rebar.lock
 log/
 _build/
 emqtt_bench
+libquicer_nif.so
 rebar3
