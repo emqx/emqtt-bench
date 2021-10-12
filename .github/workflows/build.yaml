@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: make
-      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/bench
+      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
 
   docker:
     name: docker
