@@ -1,6 +1,5 @@
 REBAR = $(CURDIR)/rebar3
-
-REBAR_URL := https://github.com/emqx/rebar3/releases/download/3.14.3-emqx-7/rebar3
+REBAR_VERSION = 3.14.3-emqx-7
 
 .PHONY: all
 all: release
@@ -30,8 +29,8 @@ xref: compile
 docker:
 	@docker build --no-cache -t emqtt_bench:$$(git describe --tags --always) .
 
-$(REBAR):
-ifneq ($(wildcard rebar3),rebar3)
-	@curl -Lo rebar3 $(REBAR_URL) || wget $(REBAR_URL)
-endif
-	@chmod a+x rebar3
+.PHONY: ensure-rebar3
+ensure-rebar3:
+	@$(CURDIR)/scripts/ensure-rebar3.sh $(REBAR_VERSION)
+
+$(REBAR): ensure-rebar3
