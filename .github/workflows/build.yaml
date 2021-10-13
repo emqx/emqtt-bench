@@ -11,17 +11,37 @@ on:
 jobs:
   package:
     runs-on: ubuntu-latest
-    container: ghcr.io/emqx/emqx-builder-helper/5.0:23.2.7.2-emqx-2-ubuntu20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - 23.2.7.2-emqx-2
+          - 24.0.5-emqx-1
+        os:
+          - ubuntu20.04
+          - ubuntu18.04
+          - ubuntu16.04
+          - debian10
+          - debian9
+          - centos8
+          # - centos7
+    container: ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v1
       - run: make
-      - run: |
-          ls -al _build/emqtt_bench/rel/emqtt_bench/bin
-          ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
+      - if: failure()
+        run: cat rebar3.crashdump
+      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
 
   docker:
     name: docker
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - 23.2.7.2-emqx-2
+          - 24.0.5-emqx-1
     steps:
       - uses: actions/checkout@v2
       - uses: docker/setup-qemu-action@v1
@@ -48,6 +68,8 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            FROM=ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-alpine3.14
       - uses: docker/build-push-action@v2
         if: github.event_name == 'release'
         with:
@@ -56,3 +78,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            FROM=ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-alpine3.14
