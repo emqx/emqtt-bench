@@ -1,6 +1,6 @@
 {application, emqtt_bench, [
   {description, "Erlang MQTT v5.0 Benchmark Tool"},
-  {vsn, "0.5"},
+  {vsn, git},
   {registered, []},
   {applications, [kernel, stdlib, quicer, emqtt, getopt, gun, cowlib]},
   {env, []},
