@@ -12,6 +12,6 @@ rel/example_project
 rebar.lock
 log/
 _build/
-emqtt_bench
+/emqtt_bench
 libquicer_nif.so
 rebar3
