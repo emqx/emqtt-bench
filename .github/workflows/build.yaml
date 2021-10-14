@@ -24,11 +24,14 @@ jobs:
           - debian10
           - debian9
           - centos8
-          # - centos7
-    container: ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-${{ matrix.os }}
+          - centos7
+    container:
+        image: ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v1
-      - run: make
+      - shell: bash
+        run: make
       - if: failure()
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
@@ -64,7 +67,7 @@ jobs:
         if: github.event_name != 'release'
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -74,7 +77,7 @@ jobs:
         if: github.event_name == 'release'
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
