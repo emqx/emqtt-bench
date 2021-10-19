@@ -24,7 +24,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ github.ref }}
-          release_name: EMQ X UI ${{ github.ref }} Released
+          release_name: Emqtt Bench ${{ github.ref }} Released
+          body: Emqtt Bench ${{ github.ref }} Released
           draft: false
           prerelease: false
 
@@ -60,7 +61,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.releases.outputs.upload_url }}
+          upload_url: ${{ needs.release.outputs.upload_url }}
           asset_path: ./emqtt-bench-${{ needs.release.outputs.tag }}-${{ matrix.os }}-amd64.tar.gz
       - name: Configure AWS Credentials
         if: startsWith(github.ref, 'refs/tags/')
