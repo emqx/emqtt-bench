@@ -56,6 +56,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
+         {expiry, $x, "session-expiry", {integer, 0},
+          "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {limit, $L, "limit", {integer, 0},
           "The max message count to publish, 0 means unlimited"},
          {ssl, $S, "ssl", {boolean, false},
@@ -100,6 +102,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
+         {expiry, $x, "session-expiry", {integer, 0},
+          "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -138,6 +142,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean session"},
+         {expiry, $x, "session-expiry", {integer, 0},
+          "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
          {certfile, undefined, "certfile", string,
@@ -382,8 +388,9 @@ connect(Parent, N, PubSub, Opts) ->
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
-                {ssl_opts, ssl_opts(Opts)}
-               | mqtt_opts(Opts)],
+                {ssl_opts, ssl_opts(Opts)}]
+        ++ session_property_opts(Opts)
+        ++ mqtt_opts(Opts),
     MqttOpts1 = case PubSub of
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
@@ -483,6 +490,21 @@ publish(Client, Opts) ->
             inc_counter(pub_fail)
     end,
     Res.
+
+session_property_opts(Opts) ->
+    case session_property_opts(Opts, #{}) of
+        Empty when map_size(Empty) =:= 0 ->
+            [];
+        PropertyOpts ->
+            [{properties, PropertyOpts}]
+    end.
+
+session_property_opts([{expiry, Exp}|Left], Props) ->
+    session_property_opts(Left, Props#{'Session-Expiry-Interval' => Exp});
+session_property_opts([_|Left], Props) ->
+    session_property_opts(Left, Props);
+session_property_opts([], Props) ->
+    Props.
 
 mqtt_opts(Opts) ->
     mqtt_opts(Opts, []).
