@@ -15,32 +15,39 @@ make
 ```sh
 $ ./emqtt_bench conn --help
 Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
-                        [-c [<count>]] [-n [<startnumber>]]
-                        [-i [<interval>]] [-u <username>] [-P <password>]
-                        [-k [<keepalive>]] [-C [<clean>]] [-S [<ssl>]]
-                        [--certfile <certfile>] [--keyfile <keyfile>]
+                        [-V [<version>]] [-c [<count>]]
+                        [-n [<startnumber>]] [-i [<interval>]]
+                        [-u <username>] [-P <password>]
+                        [-k [<keepalive>]] [-C [<clean>]] [-x [<expiry>]]
+                        [-S [<ssl>]] [--certfile <certfile>]
+                        [--keyfile <keyfile>] [--quic [<quic>]]
                         [--ifaddr <ifaddr>] [--prefix <prefix>]
+                        [-l <lowmem>]
 
-  --help             help information
-  -h, --host         mqtt server hostname or IP address [default:
-                     localhost]
-  -p, --port         mqtt server port number [default: 1883]
-  -V, --version      mqtt protocol version: 3 | 4 | 5 [default: 5]
-  -c, --count        max count of clients [default: 200]
-  -n, --startnumber  start number [default: 0]
-  -i, --interval     interval of connecting to the broker [default: 10]
-  -u, --username     username for connecting to server
-  -P, --password     password for connecting to server
-  -k, --keepalive    keep alive in seconds [default: 300]
-  -C, --clean        clean session [default: true]
-  -S, --ssl          ssl socoket for connecting to server [default: false]
-  --certfile         client certificate for authentication, if required by
-                     server
-  --keyfile          client private key for authentication, if required by
-                     server
-  --ifaddr           One or multiple (comma-separated) source IP addresses
-  --prefix           client id prefix
-  -l, --lowmem       low mem mode, but use more CPU 
+  --help                help information
+  -h, --host            mqtt server hostname or IP address [default:
+                        localhost]
+  -p, --port            mqtt server port number [default: 1883]
+  -V, --version         mqtt protocol version: 3 | 4 | 5 [default: 5]
+  -c, --count           max count of clients [default: 200]
+  -n, --startnumber     start number [default: 0]
+  -i, --interval        interval of connecting to the broker [default: 10]
+  -u, --username        username for connecting to server
+  -P, --password        password for connecting to server
+  -k, --keepalive       keep alive in seconds [default: 300]
+  -C, --clean           clean session [default: true]
+  -x, --session-expiry  Set 'Session-Expiry' for persistent sessions
+                        (seconds) [default: 0]
+  -S, --ssl             ssl socoket for connecting to server [default:
+                        false]
+  --certfile            client certificate for authentication, if required
+                        by server
+  --keyfile             client private key for authentication, if required
+                        by server
+  --quic                QUIC transport [default: false]
+  --ifaddr              local ipaddress or interface address
+  --prefix              client id prefix
+  -l, --lowmem          enable low mem mode, but use more CPU
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
@@ -58,33 +65,42 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-n [<startnumber>]] [-i [<interval>]]
                        [-t <topic>] [-q [<qos>]] [-u <username>]
                        [-P <password>] [-k [<keepalive>]] [-C [<clean>]]
-                       [-S [<ssl>]] [--certfile <certfile>]
-                       [--keyfile <keyfile>] [--ws [<ws>]]
+                       [-x [<expiry>]] [-S [<ssl>]]
+                       [--certfile <certfile>] [--keyfile <keyfile>]
+                       [--ws [<ws>]] [--quic [<quic>]]
                        [--ifaddr <ifaddr>] [--prefix <prefix>]
+                       [-l <lowmem>]
 
-  --help             help information
-  -h, --host         mqtt server hostname or IP address [default: localhost]
-  -p, --port         mqtt server port number [default: 1883]
-  -V, --version      mqtt protocol version: 3 | 4 | 5 [default: 5]
-  -c, --count        max count of clients [default: 200]
-  -n, --startnumber  start number [default: 0]
-  -i, --interval     interval of connecting to the broker [default: 10]
-  -t, --topic        topic subscribe, support %u, %c, %i variables
-  -q, --qos          subscribe qos [default: 0]
-  -u, --username     username for connecting to server
-  -P, --password     password for connecting to server
-  -k, --keepalive    keep alive in seconds [default: 300]
-  -C, --clean        clean start [default: true]
-  -S, --ssl          ssl socoket for connecting to server [default: false]
-  --certfile         client certificate for authentication, if required by server
-  --keyfile          client private key for authentication, if required by server
-  --ws               websocket transport [default: false]
-  --ifaddr           local ipaddress or interface address
-  --prefix           client id prefix
-  -l, --lowmem       low mem mode, but use more CPU
+  --help                help information
+  -h, --host            mqtt server hostname or IP address [default:
+                        localhost]
+  -p, --port            mqtt server port number [default: 1883]
+  -V, --version         mqtt protocol version: 3 | 4 | 5 [default: 5]
+  -c, --count           max count of clients [default: 200]
+  -n, --startnumber     start number [default: 0]
+  -i, --interval        interval of connecting to the broker [default: 10]
+  -t, --topic           topic subscribe, support %u, %c, %i variables
+  -q, --qos             subscribe qos [default: 0]
+  -u, --username        username for connecting to server
+  -P, --password        password for connecting to server
+  -k, --keepalive       keep alive in seconds [default: 300]
+  -C, --clean           clean start [default: true]
+  -x, --session-expiry  Set 'Session-Expiry' for persistent sessions
+                        (seconds) [default: 0]
+  -S, --ssl             ssl socoket for connecting to server [default:
+                        false]
+  --certfile            client certificate for authentication, if required
+                        by server
+  --keyfile             client private key for authentication, if required
+                        by server
+  --ws                  websocket transport [default: false]
+  --quic                QUIC transport [default: false]
+  --ifaddr              local ipaddress or interface address
+  --prefix              client id prefix
+  -l, --lowmem          enable low mem mode, but use more CPU
 ```
 
-For example, create 50K concurrent connections at the arrival rate of 100/sec: 
+For example, create 50K concurrent connections at the arrival rate of 100/sec:
 
 ```sh
 ./emqtt_bench sub -c 50000 -i 10 -t bench/%i -q 2
@@ -100,12 +116,15 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-I [<interval_of_msg>]] [-u <username>]
                        [-P <password>] [-t <topic>] [-s [<size>]]
                        [-q [<qos>]] [-r [<retain>]] [-k [<keepalive>]]
-                       [-C [<clean>]] [-S [<ssl>]]
-                       [--certfile <certfile>] [--keyfile <keyfile>]
-                       [--ws [<ws>]] [--ifaddr <ifaddr>] [--prefix <prefix>]
+                       [-C [<clean>]] [-x [<expiry>]] [-L [<limit>]]
+                       [-S [<ssl>]] [--certfile <certfile>]
+                       [--keyfile <keyfile>] [--ws [<ws>]]
+                       [--quic [<quic>]] [--ifaddr <ifaddr>]
+                       [--prefix <prefix>] [-l <lowmem>]
 
   --help                 help information
-  -h, --host             mqtt server hostname or IP address [default: localhost]
+  -h, --host             mqtt server hostname or IP address [default:
+                         localhost]
   -p, --port             mqtt server port number [default: 1883]
   -V, --version          mqtt protocol version: 3 | 4 | 5 [default: 5]
   -c, --count            max count of clients [default: 200]
@@ -120,14 +139,22 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -r, --retain           retain message [default: false]
   -k, --keepalive        keep alive in seconds [default: 300]
   -C, --clean            clean start [default: true]
-  -L, --limit            The max message count to publish, 0 means unlimited [default: 0]
-  -S, --ssl              ssl socoket for connecting to server [default: false]
-  --certfile             client certificate for authentication, if required by server
-  --keyfile              client private key for authentication, if required by server
+  -x, --session-expiry   Set 'Session-Expiry' for persistent sessions
+                         (seconds) [default: 0]
+  -L, --limit            The max message count to publish, 0 means
+                         unlimited [default: 0]
+  -S, --ssl              ssl socoket for connecting to server [default:
+                         false]
+  --certfile             client certificate for authentication, if
+                         required by server
+  --keyfile              client private key for authentication, if
+                         required by server
   --ws                   websocket transport [default: false]
-  --ifaddr               One or multiple (comma-separated) source IP addresses
+  --quic                 QUIC transport [default: false]
+  --ifaddr               One or multiple (comma-separated) source IP
+                         addresses
   --prefix               client id prefix
-  -l, --lowmem       low mem mode, but use more CPU 
+  -l, --lowmem           enable low mem mode, but use more CPU
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
@@ -158,7 +185,7 @@ For example, create 100 connections and each publishes messages at the rate of 1
 
 ## Notice
 
-You should not set '-c' option more than 64K for TCP ports limit on one source addresses, 
+You should not set '-c' option more than 64K for TCP ports limit on one source addresses,
 however you can send messages from multiple source IP Addresses with '--ifaddr ' such like
 
 ./emqtt_bench sub -c 200000 -t "perf/test" --ifaddr 192.168.200.18,192.168.200.19,192.168.200.20,192.168.200.21
