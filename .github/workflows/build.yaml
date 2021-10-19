@@ -6,76 +6,6 @@ on:
       - "*"
       - "!v*"
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - name: Get tag
-        if: startsWith(github.ref, 'refs/tags/')
-        id: tag
-        uses: dawidd6/action-get-tag@v1
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Emqtt Bench ${{ github.ref }} Released
-          body: Emqtt Bench ${{ github.ref }} Released
-          draft: false
-          prerelease: false
-
-  package:
-    runs-on: ubuntu-latest
-    needs: release
-    strategy:
-      fail-fast: false
-      matrix:
-        otp:
-          - "24.0.5-emqx-1"
-        os:
-          - ubuntu20.04
-          - ubuntu18.04
-          - ubuntu16.04
-          - debian10
-          - debian9
-          - centos8
-          - centos7
-    container:
-      image: ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v1
-      - shell: bash
-        run: make
-      - if: failure()
-        run: cat rebar3.crashdump
-      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
-      - name: Upload Release Asset
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./emqtt-bench-${{ needs.release.outputs.tag }}-${{ matrix.os }}-amd64.tar.gz
-          asset_name: emqtt-bench-${{ needs.release.outputs.tag }}-${{ matrix.os }}-amd64.tar.gz
-          asset_content_type: application/tar+gzip
-      - name: Configure AWS Credentials
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
-      - name: Upload AWS S3 Assert
-        if: startsWith(github.ref, 'refs/tags/')
-        run: aws s3 cp ./emqtt-bench-${{ needs.release.outputs.tag }}-${{ matrix.os }}-amd64.tar.gz ${{ secrets.AWS_DEFAULT_REGION }}/emqtt-bench/${{ needs.release.outputs.tag }}
-
   docker:
     runs-on: ubuntu-latest
     strategy:
@@ -111,3 +41,71 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             FROM=ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-alpine3.14
+
+  package:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - "24.0.5-emqx-1"
+        os:
+          - ubuntu20.04
+          - ubuntu18.04
+          - ubuntu16.04
+          - debian10
+          - debian9
+          - centos8
+          - centos7
+    container:
+      image: ghcr.io/emqx/emqx-builder-helper/5.0:${{ matrix.otp }}-${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v1
+      - shell: bash
+        run: make
+      - if: failure()
+        run: cat rebar3.crashdump
+      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
+      - uses: actions/upload-artifact@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          name: packages
+          path: ./emqtt-bench-${{ needs.release.outputs.tag }}-${{ matrix.os }}-amd64.tar.gz
+
+  release:
+    runs-on: ubuntu-latest
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@v2
+        with:
+          name: packages
+          path: packages
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Emqtt Bench ${{ github.ref }} Released
+          body: Emqtt Bench ${{ github.ref }} Released
+          draft: false
+          prerelease: false
+      - uses: Rory-Z/upload-release-asset@v1
+        with:
+          repo: emqtt-bench
+          path: "packages/emqtt-bench-*"
+          token: ${{ github.token }}
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: Upload AWS S3 Assert
+        run: aws s3 cp --recursive packages ${{ secrets.AWS_DEFAULT_REGION }}/emqtt-bench/${GITHUB_REF##*/}/
