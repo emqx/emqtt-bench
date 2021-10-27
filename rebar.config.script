@@ -17,7 +17,7 @@ IsQuicSupp = fun() ->
                     )
              end,
 
-Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.8"}}},
+Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.9"}}},
 ExtraDeps = fun(C) ->
                 {deps, Deps0} = lists:keyfind(deps, 1, C),
                     Deps = Deps0 ++
