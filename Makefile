@@ -8,7 +8,6 @@ release: compile
 	$(REBAR) as emqtt_bench release,tar
 	@$(CURDIR)/scripts/rename-package.sh
 
-
 compile: $(REBAR) unlock
 	$(REBAR) compile
 
