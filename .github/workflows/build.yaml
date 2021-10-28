@@ -49,6 +49,7 @@ jobs:
       matrix:
         otp:
           - "24.1.1-emqx-1"
+        quic_support: [true, false]
         os:
           - ubuntu20.04
           - ubuntu18.04
@@ -63,7 +64,9 @@ jobs:
     steps:
       - uses: actions/checkout@v1
       - shell: bash
-        run: make
+        run: |
+          [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
+          make
       - if: failure()
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
