@@ -10,6 +10,11 @@ Requires Erlang/OTP 22.3+ to build.
 make
 ```
 
+Optional, you could disable QUIC support if you have problem with compiling
+``` sh
+BUILD_WITHOUT_QUIC=1 make
+```
+
 ## Connect Benchmark
 
 ```sh
