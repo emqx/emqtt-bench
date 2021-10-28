@@ -232,7 +232,7 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
-    prepare(), init(),
+    prepare(Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
     AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
                     false ->
@@ -264,10 +264,14 @@ start(PubSub, Opts) ->
     timer:send_interval(1000, stats),
     main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
 
-prepare() ->
+prepare(Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
     net_kernel:start([Sname, shortnames]),
-    {ok, _} = application:ensure_all_started(quicer),
+    case proplists:get_bool(quic, Opts) of
+        true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
+        _ ->
+            ok
+    end,
     application:ensure_all_started(emqtt_bench).
 
 init() ->
@@ -662,3 +666,35 @@ loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
                          lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun, seq])
                  end, Opts).
+
+-spec maybe_start_quicer() -> boolean().
+maybe_start_quicer() ->
+    case is_quicer_supp() of
+        true ->
+            case application:ensure_all_started(quicer) of
+                {error, {quicer, {"no such file or directory", _}}} -> false;
+                {ok, _} -> true
+            end;
+        false ->
+            false
+    end.
+
+-spec is_quicer_supp() -> boolean().
+is_quicer_supp() ->
+    not (is_centos_6()
+         orelse is_win32()
+         orelse is_quicer_disabled()).
+
+is_quicer_disabled() ->
+    false =/= os:getenv("BUILD_WITHOUT_QUIC").
+
+is_centos_6() ->
+    case file:read_file("/etc/centos-release") of
+        {ok, <<"CentOS release 6", _/binary >>} ->
+            true;
+        _ ->
+            false
+    end.
+
+is_win32() ->
+    win32 =:= element(1, os:type()).
