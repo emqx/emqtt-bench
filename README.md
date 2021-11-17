@@ -4,6 +4,18 @@
 
 Requires Erlang/OTP 22.3+ to build.
 
+Requires libatomic 
+
+``` sh
+# centos 7
+sudo yum install libatomic
+```
+
+``` sh
+# ubuntu 20.04
+sudo apt install libatomic1 
+```
+
 ## Build first
 
 ```sh

@@ -71,7 +71,7 @@ jobs:
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
       - uses: actions/upload-artifact@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.quic_support == 'true'
         with:
           name: packages
           path: ./*.tar.gz
