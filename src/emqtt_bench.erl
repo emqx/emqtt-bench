@@ -247,7 +247,6 @@ start(PubSub, Opts) ->
     CntPerWorker = Count div NoWorkers,
     Rem = Count rem NoWorkers,
     Interval = proplists:get_value(interval, Opts) * NoWorkers,
-    MsgInterval = proplists:get_value(interval_of_msg, Opts, 1000) * NoWorkers,
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*P,
                           CountParm = case Rem =/= 0 andalso P == 1 of
@@ -258,7 +257,6 @@ start(PubSub, Opts) ->
                                       end,
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
                                                       {ifaddr, lists:nth(P, AddrList)},
-                                                      {interval_of_msg, MsgInterval},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
@@ -430,7 +428,7 @@ connect(Parent, N, PubSub, Opts) ->
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
-    Idle = max(proplists:get_value(interval_of_msg, Opts) * 2, 500),
+    Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
     receive
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
