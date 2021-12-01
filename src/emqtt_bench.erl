@@ -73,7 +73,9 @@
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {inflight, $F,"inflight", {integer, 0},
+          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
         ]).
 
 -define(SUB_OPTS,
@@ -160,12 +162,12 @@
 
 -define(TAB, ?MODULE).
 -define(COUNTERS, 16).
--define(IDX_SENT, 1).
 -define(IDX_RECV, 2).
 -define(IDX_SUB, 3).
 -define(IDX_SUB_FAIL, 4).
 -define(IDX_PUB, 5).
 -define(IDX_PUB_FAIL, 6).
+-define(IDX_PUB_OVERRUN, 7).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -259,7 +261,7 @@ start(PubSub, Opts) ->
                                                       {interval_of_msg, MsgInterval},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
-                          spawn(?MODULE, run, [self(), PubSub, WOpts])
+                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
     main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
@@ -279,9 +281,9 @@ init() ->
     CRef = counters:new(?COUNTERS, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
-    put({stats, sent}, 0),
     put({stats, pub}, 0),
     put({stats, pub_fail}, 0),
+    put({stats, pub_overrun}, 0),
     put({stats, sub_fail}, 0),
     put({stats, sub}, 0).
 
@@ -297,13 +299,13 @@ main_loop(Uptime, Count) ->
             print_stats(Uptime),
             main_loop(Uptime, Count);
         Msg ->
-            print("~p~n", [Msg]),
+            print("main_loop_msg: ~p~n", [Msg]),
             main_loop(Uptime, Count)
     end.
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [sent, recv, sub, pub, sub_fail, pub_fail]],
+        Cnt <- [recv, sub, pub, sub_fail, pub_fail, pub_overrun]],
     ok.
 
 print_stats(Uptime, Name) ->
@@ -311,12 +313,24 @@ print_stats(Uptime, Name) ->
     LastVal = get({stats, Name}),
     case CurVal == LastVal of
         false ->
-            Tdiff = timer:now_diff(os:timestamp(), Uptime) div 1000,
-            print("~s(~w): total=~w, rate=~w(msg/sec)~n",
-                  [Name, Tdiff, CurVal, CurVal - LastVal]),
+            Tdiff = fmt_tdiff(timer:now_diff(os:timestamp(), Uptime) div 1000),
+            print("~s ~s total=~w rate=~w/sec~n",
+                  [Tdiff, Name, CurVal, CurVal - LastVal]),
             put({stats, Name}, CurVal);
         true -> ok
     end.
+
+fmt_tdiff(D) when D < 1000 -> [integer_to_list(D), "ms"];
+fmt_tdiff(D) -> do_fmt_tdiff(D div 1000).
+
+do_fmt_tdiff(S) ->
+    Factors = [{60, "s"}, {60, "m"}, {24, "h"}, {10000000, "d"}],
+    Result = lists:reverse(do_fmt_tdiff(S, Factors)),
+    iolist_to_binary([[integer_to_list(X), Unit] || {X, Unit} <- Result]).
+
+do_fmt_tdiff(0, _) -> [];
+do_fmt_tdiff(T, [{Fac, Unit} | Rest]) ->
+    [{T rem Fac, Unit} | do_fmt_tdiff(T div Fac,  Rest)].
 
 %% this is only used for main loop
 return_print(Fmt, Args) ->
@@ -339,8 +353,6 @@ maybe_feed(ReturnMaybeFeed) ->
 maybe_feed(return, feed) -> io:format("\n");
 maybe_feed(_, _) -> ok.
 
-get_counter(sent) ->
-    counters:get(cnt_ref(), ?IDX_SENT);
 get_counter(recv) ->
     counters:get(cnt_ref(), ?IDX_RECV);
 get_counter(sub) ->
@@ -350,10 +362,10 @@ get_counter(pub) ->
 get_counter(sub_fail) ->
     counters:get(cnt_ref(), ?IDX_SUB_FAIL);
 get_counter(pub_fail) ->
-    counters:get(cnt_ref(), ?IDX_PUB_FAIL).
+    counters:get(cnt_ref(), ?IDX_PUB_FAIL);
+get_counter(pub_overrun) ->
+    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN).
 
-inc_counter(sent) ->
-    counters:add(cnt_ref(), ?IDX_SENT, 1);
 inc_counter(recv) ->
     counters:add(cnt_ref(), ?IDX_RECV, 1);
 inc_counter(sub) ->
@@ -363,8 +375,9 @@ inc_counter(sub_fail) ->
 inc_counter(pub) ->
     counters:add(cnt_ref(), ?IDX_PUB, 1);
 inc_counter(pub_fail) ->
-    counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1).
-
+    counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
+inc_counter(pub_overrun) ->
+    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -408,11 +421,8 @@ connect(Parent, N, PubSub, Opts) ->
             Parent ! {connected, N, Client},
             case PubSub of
                 conn -> ok;
-                sub ->
-                    subscribe(Client, AllOpts);
-                pub ->
-                   Interval = proplists:get_value(interval_of_msg, Opts),
-                   timer:send_interval(Interval, publish)
+                sub -> subscribe(Client, AllOpts);
+                pub -> self() ! publish
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
@@ -420,15 +430,17 @@ connect(Parent, N, PubSub, Opts) ->
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
+    Idle = max(proplists:get_value(interval_of_msg, Opts) * 2, 500),
     receive
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
-                true -> 
+                true ->
+                   %% this call hangs if emqtt inflight is full
                     case publish(Client, Opts) of
-                        ok -> inc_counter(sent);
-                        {ok, _} ->
-                            inc_counter(sent);
+                        ok -> next_publish(Opts);
+                        {ok, _} -> next_publish(Opts);
                         {error, Reason} ->
+                            inc_counter(pub_fail),
                             io:format("client(~w): publish error - ~p~n", [N, Reason])
                     end,
                     loop(Parent, N, Client, PubSub, Opts);
@@ -439,12 +451,17 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {publish, _Publish} ->
             inc_counter(recv),
             loop(Parent, N, Client, PubSub, Opts);
-        {'EXIT', Client, normal} ->
+        {'EXIT', _Client, normal} ->
             ok;
-        {'EXIT', Client, Reason} ->
-            io:format("client(~w): EXIT for ~p~n", [N, Reason])
+        {'EXIT', _Client, Reason} ->
+            io:format("client(~w): EXIT for ~p~n", [N, Reason]);
+        {puback, _} ->
+            loop(Parent, N, Client, PubSub, Opts);
+        Other ->
+            io:format("client(~w): discarded unkonwn message ~p~n", [N, Other]),
+            loop(Parent, N, Client, PubSub, Opts)
     after
-        500 ->
+        Idle ->
             case proplists:get_bool(lowmem, Opts) of
                 true ->
                     erlang:garbage_collect(Client, [{type, major}]),
@@ -454,6 +471,25 @@ loop(Parent, N, Client, PubSub, Opts) ->
             end,
             proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
+
+put_publish_begin_time() ->
+    NowT = erlang:monotonic_time(millisecond),
+    put(last_publish_ts, NowT),
+    ok.
+
+next_publish(Opts) ->
+    Interval = proplists:get_value(interval_of_msg, Opts),
+    LastT = get(last_publish_ts),
+    NowT = erlang:monotonic_time(millisecond),
+    Spent = NowT - LastT,
+    Remain = Interval - Spent,
+    Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
+    inc_counter(pub),
+    case Remain > 0 of
+        true -> _ = erlang:send_after(Remain, self(), publish);
+        false -> self() ! publish
+    end,
+    ok.
 
 consumer_pub_msg_fun_init(0) ->
     fun() -> true end;
@@ -481,19 +517,11 @@ subscribe(Client, Opts) ->
     Res.
 
 publish(Client, Opts) ->
+    ok = put_publish_begin_time(),
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
-    Res = emqtt:publish(Client, topic_opt(Opts), Payload, Flags),
-    case Res of
-        ok ->
-            inc_counter(pub);
-        {ok,_} ->
-            inc_counter(pub);
-        {error, _} ->
-            inc_counter(pub_fail)
-    end,
-    Res.
+    emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
@@ -539,6 +567,12 @@ mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
+mqtt_opts([{inflight, InFlight0}|Opts], Acc) ->
+    InFlight = case InFlight0 of
+                   0 -> infinity;
+                   _ -> InFlight0
+               end,
+    mqtt_opts(Opts, [{max_inflight, InFlight} | Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
@@ -664,7 +698,7 @@ replace_opts(Opts, NewOpts) ->
 %% trim opts to save proc stack mem.
 loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
-                         lists:member(K, [payload, qos, retain, topic, lowmem, limit_fun, seq])
+                         lists:member(K, [interval_of_msg, payload, qos, retain, topic, lowmem, limit_fun, seq])
                  end, Opts).
 
 -spec maybe_start_quicer() -> boolean().

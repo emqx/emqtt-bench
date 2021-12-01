@@ -5,7 +5,7 @@ REBAR_VERSION = 3.14.3-emqx-7
 all: release
 
 release: compile
-	$(REBAR) as emqtt_bench release,tar
+	$(REBAR) as emqtt_bench tar
 	@$(CURDIR)/scripts/rename-package.sh
 
 compile: $(REBAR) unlock
