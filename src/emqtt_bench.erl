@@ -73,7 +73,9 @@
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
-         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {inflight, $F,"inflight", {integer, 0},
+          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
         ]).
 
 -define(SUB_OPTS,
@@ -423,7 +425,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
     receive
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
-                true -> 
+                true ->
                     case publish(Client, Opts) of
                         ok -> inc_counter(sent);
                         {ok, _} ->
@@ -539,6 +541,8 @@ mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
+mqtt_opts([{inflight, InFlight}|Opts], Acc) ->
+    mqtt_opts(Opts, [{max_inflight, InFlight} | Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
