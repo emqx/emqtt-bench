@@ -32,6 +32,12 @@ case "$ARCH" in
         ;;
 esac
 
+if [ -z ${BUILD_WITHOUT_QUIC+x} ]; then
+    QUIC="-quic";
+else
+    QUIC=""
+fi
+
 VSN="$(grep -E ".+vsn.+" _build/emqtt_bench/lib/emqtt_bench/ebin/emqtt_bench.app | cut -d '"' -f2)"
 BASE=$(find ./_build/emqtt_bench/rel/emqtt_bench -name "*.tar.gz" | tail -1)
-cp "$BASE" "./emqtt-bench-${VSN}-${SYSTEM}-${ARCH}.tar.gz"
+cp "$BASE" "./emqtt-bench-${VSN}-${SYSTEM}-${ARCH}${QUIC}.tar.gz"

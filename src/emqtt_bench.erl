@@ -27,6 +27,8 @@
 -define(PUB_OPTS,
         [{help, undefined, "help", boolean,
           "help information"},
+         {dist, $d, "dist", boolean,
+          "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
@@ -81,6 +83,8 @@
 -define(SUB_OPTS,
         [{help, undefined, "help", boolean,
           "help information"},
+         {dist, $d, "dist", boolean,
+          "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
@@ -125,6 +129,8 @@
 -define(CONN_OPTS, [
          {help, undefined, "help", boolean,
           "help information"},
+         {dist, $d, "dist", boolean,
+          "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or IP address"},
          {port, $p, "port", {integer, 1883},
@@ -266,7 +272,7 @@ start(PubSub, Opts) ->
 
 prepare(Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
-    net_kernel:start([Sname, shortnames]),
+    proplists:get_bool(dist, Opts) andalso net_kernel:start([Sname, shortnames]),
     case proplists:get_bool(quic, Opts) of
         true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
         _ ->
