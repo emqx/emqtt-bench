@@ -516,7 +516,7 @@ subscribe(Client, Opts) ->
             inc_counter(sub);
         {error, _Reason} ->
             inc_counter(sub_fail),
-            emqtt:disconnect(Client, sub_fail)
+            emqtt:disconnect(Client, <<"sub_fail">>)
     end,
     Res.
 
