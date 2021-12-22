@@ -254,7 +254,7 @@ start(PubSub, Opts) ->
     Rem = Count rem NoWorkers,
     Interval = proplists:get_value(interval, Opts) * NoWorkers,
     lists:foreach(fun(P) ->
-                          StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*P,
+                          StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
                           CountParm = case Rem =/= 0 andalso P == 1 of
                                           true ->
                                               [{count, CntPerWorker + Rem}];
