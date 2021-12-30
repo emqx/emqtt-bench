@@ -50,6 +50,8 @@
           "topic subscribe, support %u, %c, %i variables"},
          {size, $s, "size", {integer, 256},
           "payload size"},
+         {message, $m, "message", string,
+          "set the message content for publish"},
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
          {retain, $r, "retain", {boolean, false},
@@ -232,7 +234,11 @@ main(sub, Opts) ->
 
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
-    Payload = iolist_to_binary([O || O <- lists:duplicate(Size, $a)]),
+    Payload = case proplists:get_value(message, Opts) of
+                  undefined ->
+                    iolist_to_binary([O || O <- lists:duplicate(Size, $a)]);
+                  StrPayload -> StrPayload
+              end,
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
     start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
 
