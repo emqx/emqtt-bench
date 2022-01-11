@@ -77,6 +77,8 @@
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
+         {shortids, $s, "shortids", {boolean, false},
+          "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {inflight, $F,"inflight", {integer, 0},
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
@@ -125,6 +127,8 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
+         {shortids, $s, "shortids", {boolean, false},
+          "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
         ]).
 
@@ -165,6 +169,8 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
+         {shortids, $s, "shortids", {boolean, false},
+          "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
         ]).
 
@@ -635,13 +641,19 @@ client_id(PubSub, N, Opts) ->
         IfAddr    ->
             IfAddr
     end,
-    case proplists:get_value(prefix, Opts) of
-        undefined ->
+    case { proplists:get_value(shortids, Opts)
+         , proplists:get_value(prefix, Opts)
+         } of
+        {false, undefined} ->
             list_to_binary(lists:concat([Prefix, "_bench_", atom_to_list(PubSub),
                                     "_", N, "_", rand:uniform(16#FFFFFFFF)]));
-        Val ->
+        {false, Val} ->
             list_to_binary(lists:concat([Val, "_bench_", atom_to_list(PubSub),
-                                    "_", N]))
+                                         "_", N]));
+        {true, Pref} when Pref =:= undefined; Pref =:= "" ->
+            integer_to_binary(N);
+        {true, Pref} ->
+            list_to_binary(lists:concat([Pref, "_", N]))
     end.
 
 topics_opt(Opts) ->
