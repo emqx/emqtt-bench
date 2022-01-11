@@ -274,7 +274,7 @@ start(PubSub, Opts) ->
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
-    main_loop(os:timestamp(), 1+proplists:get_value(startnumber, Opts)).
+    main_loop(os:timestamp(), _Count = 0).
 
 prepare(Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
@@ -298,19 +298,20 @@ init() ->
     put({stats, sub}, 0).
 
 
-main_loop(Uptime, Count) ->
+main_loop(Uptime, Count0) ->
     receive
         publish_complete ->
             return_print("publish complete", []);
         {connected, _N, _Client} ->
+            Count = Count0 + 1,
             return_print("connected: ~w", [Count]),
-            main_loop(Uptime, Count+1);
+            main_loop(Uptime, Count);
         stats ->
             print_stats(Uptime),
-            main_loop(Uptime, Count);
+            main_loop(Uptime, Count0);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
-            main_loop(Uptime, Count)
+            main_loop(Uptime, Count0)
     end.
 
 print_stats(Uptime) ->
