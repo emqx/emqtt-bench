@@ -600,8 +600,12 @@ tcp_opts([], Acc) ->
 tcp_opts([{lowmem, true} | Opts], Acc) ->
     tcp_opts(Opts, [{recbuf, 64} , {sndbuf, 64} | Acc]);
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
-    {ok, IpAddr} = inet_parse:address(IfAddr),
-    tcp_opts(Opts, [{ip, IpAddr}|Acc]);
+    case inet_parse:address(IfAddr) of
+        {ok, IpAddr} ->
+            tcp_opts(Opts, [{ip, IpAddr}|Acc]);
+        {error, Reason} ->
+            error({bad_ip_address, {IfAddr, Reason}})
+    end;
 tcp_opts([_|Opts], Acc) ->
     tcp_opts(Opts, Acc).
 
