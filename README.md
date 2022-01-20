@@ -205,9 +205,11 @@ For example, create 100 connections and each publishes messages at the rate of 1
 You should not set '-c' option more than 64K for TCP ports limit on one source addresses,
 however you can send messages from multiple source IP Addresses with '--ifaddr ' such like
 
+```
 ./emqtt_bench sub -c 200000 -t "perf/test" --ifaddr 192.168.200.18,192.168.200.19,192.168.200.20,192.168.200.21
+```
 
-ensure you ulimit the fds and expand the port range like following on Linux.
+Make sure to increase resource usage limits and expand the port range like following on Linux.
 
 ``` sh
 ulimit -n 200000
