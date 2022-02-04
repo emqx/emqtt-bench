@@ -16,6 +16,8 @@
 
 -module(emqtt_bench).
 
+-include_lib("emqtt/include/emqtt.hrl").
+
 -export([ main/1
         , main/2
         , start/2
@@ -529,7 +531,7 @@ subscribe(Client, Opts) ->
             inc_counter(sub);
         {error, _Reason} ->
             inc_counter(sub_fail),
-            emqtt:disconnect(Client, <<"sub_fail">>)
+            emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
     end,
     Res.
 
