@@ -190,14 +190,14 @@ For example, create 100 connections and each publishes messages at the rate of 1
 ## One-way SSL Socket
 
 ```sh
-./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 -S
-./emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 -S
+./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --ssl
+./emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 --ssl
 ```
 
 ## Two-way SSL Socket
 ```sh
-./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
-./emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+./emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --ssl --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+./emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --ssl --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
 ```
 
 ## Notice
