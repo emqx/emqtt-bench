@@ -606,7 +606,7 @@ tcp_opts([_|Opts], Acc) ->
     tcp_opts(Opts, Acc).
 
 ssl_opts(Opts) ->
-    ssl_opts(Opts, []).
+    ssl_opts(Opts, [{verify, verify_none}]).
 ssl_opts([], Acc) ->
     [{ciphers, all_ssl_ciphers()} | Acc];
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
