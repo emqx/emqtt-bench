@@ -136,14 +136,14 @@ docker run -it emqtt_bench sub --ifaddr 192.168.2.10
 ## One-way SSL Socket
 
 ```sh
-docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 -S
-docker run -it emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 -S
+docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --ssl
+docker run -it emqtt_bench pub -c 100 -I 10 -t bench/%i -p 8883 -s 256 --ssl
 ```
 
 ## Two-way SSL Socket
 ```sh
-docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
-docker run -it emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+docker run -it emqtt_bench sub -c 100 -i 10 -t bench/%i -p 8883 --ssl --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
+docker run -it emqtt_bench pub -c 100 -i 10 -t bench/%i -s 256 -p 8883 --ssl --certfile path/to/client-cert.pem --keyfile path/to/client-key.pem
 ```
 
 ## Notice
