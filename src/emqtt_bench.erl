@@ -82,7 +82,7 @@
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
-         {inflight, $F,"inflight", {integer, 0},
+         {inflight, $F,"inflight", {integer, 1},
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
         ]).
 

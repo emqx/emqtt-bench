@@ -16,3 +16,4 @@ _build/
 /emqtt_bench
 libquicer_nif.so
 rebar3
+*.crashdump
