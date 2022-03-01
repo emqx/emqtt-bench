@@ -2,7 +2,7 @@
 
 ## 0.4.5
 
-* Default value for `--interval` option is changed from `0` (no back-pressure) to `1`.
+* Default value for `--inflight` option is changed from `0` (no back-pressure) to `1`.
   i.e. `max-inflight` is `1` by default for QoS 1 and 2 messages.
 
 ## 0.4.4
