@@ -184,6 +184,7 @@
 -define(IDX_PUB, 5).
 -define(IDX_PUB_FAIL, 6).
 -define(IDX_PUB_OVERRUN, 7).
+-define(IDX_PUB_SUCCESS, 8).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -300,6 +301,7 @@ init() ->
     ok = persistent_term:put(?MODULE, CRef),
     put({stats, recv}, 0),
     put({stats, pub}, 0),
+    put({stats, pub_succ}, 0),
     put({stats, pub_fail}, 0),
     put({stats, pub_overrun}, 0),
     put({stats, sub_fail}, 0),
@@ -324,7 +326,7 @@ main_loop(Uptime, Count0) ->
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [recv, sub, pub, sub_fail, pub_fail, pub_overrun]],
+        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun]],
     ok.
 
 print_stats(Uptime, Name) ->
@@ -378,6 +380,8 @@ get_counter(sub) ->
     counters:get(cnt_ref(), ?IDX_SUB);
 get_counter(pub) ->
     counters:get(cnt_ref(), ?IDX_PUB);
+get_counter(pub_succ) ->
+    counters:get(cnt_ref(), ?IDX_PUB_SUCCESS);
 get_counter(sub_fail) ->
     counters:get(cnt_ref(), ?IDX_SUB_FAIL);
 get_counter(pub_fail) ->
@@ -393,6 +397,8 @@ inc_counter(sub_fail) ->
     counters:add(cnt_ref(), ?IDX_SUB_FAIL, 1);
 inc_counter(pub) ->
     counters:add(cnt_ref(), ?IDX_PUB, 1);
+inc_counter(pub_succ) ->
+    counters:add(cnt_ref(), ?IDX_PUB_SUCCESS, 1);
 inc_counter(pub_fail) ->
     counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
 inc_counter(pub_overrun) ->
@@ -475,6 +481,8 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {'EXIT', _Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason]);
         {puback, _} ->
+            %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
+            inc_counter(pub_succ),
             loop(Parent, N, Client, PubSub, Opts);
         Other ->
             io:format("client(~w): discarded unkonwn message ~p~n", [N, Other]),
