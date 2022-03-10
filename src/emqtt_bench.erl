@@ -86,7 +86,13 @@
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
          {wait_before_publishing, $w, "wait-before-publishing", {boolean, false},
           "wait for all publishers to have (at least tried to) connected "
-          "before starting publishing"}
+          "before starting publishing"},
+         {max_random_wait, undefined,"max-random-wait", {integer, 0},
+          "maximum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"},
+         {min_random_wait, undefined,"min-random-wait", {integer, 0},
+          "minimum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"}
         ]).
 
 -define(SUB_OPTS,
@@ -461,7 +467,12 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    AllOpts  = [{seq, N}, {client_id, ClientId}, {publish_signal_mref, MRef} | Opts],
+    RandomPubWaitMS = random_pub_wait_period(Opts),
+    AllOpts  = [ {seq, N}
+               , {client_id, ClientId}
+               , {publish_signal_mref, MRef}
+               , {pub_start_wait, RandomPubWaitMS}
+               | Opts],
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
@@ -473,7 +484,7 @@ connect(Parent, N, PubSub, Opts) ->
                 sub -> subscribe(Client, AllOpts);
                 pub -> case MRef of
                            undefined ->
-                               self() ! publish;
+                               erlang:send_after(RandomPubWaitMS, self(), publish);
                            _ ->
                                %% send `publish' only when all publishers
                                %% are in place.
@@ -490,7 +501,8 @@ loop(Parent, N, Client, PubSub, Opts) ->
     MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
-            self() ! publish,
+            RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
+            erlang:send_after(RandomPubWaitMS, self(), publish),
             loop(Parent, N, Client, PubSub, Opts);
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
@@ -779,6 +791,7 @@ loop_opts(Opts) ->
                                          , limit_fun
                                          , seq
                                          , publish_signal_mref
+                                         , pub_start_wait
                                          ])
                  end, Opts).
 
@@ -813,3 +826,11 @@ is_centos_6() ->
 
 is_win32() ->
     win32 =:= element(1, os:type()).
+
+random_pub_wait_period(Opts) ->
+    MaxRandomPubWaitMS = proplists:get_value(max_random_wait, Opts, 0),
+    MinRandomPubWaitMS = proplists:get_value(min_random_wait, Opts, 0),
+    case MaxRandomPubWaitMS - MinRandomPubWaitMS of
+        Period when Period =< 0 -> MinRandomPubWaitMS;
+        Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
+    end.
