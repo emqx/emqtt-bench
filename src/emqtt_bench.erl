@@ -83,7 +83,13 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {inflight, $F,"inflight", {integer, 1},
-          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
+          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
+         {max_random_wait, undefined,"max-random-wait", {integer, 0},
+          "maximum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"},
+         {min_random_wait, undefined,"min-random-wait", {integer, 0},
+          "minimum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"}
         ]).
 
 -define(SUB_OPTS,
@@ -441,13 +447,19 @@ connect(Parent, N, PubSub, Opts) ->
 	{ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
+    MaxRandomPubWaitMS = proplists:get_value(max_random_wait, Opts, 0),
+    MinRandomPubWaitMS = proplists:get_value(min_random_wait, Opts, 0),
+    RandomPubWaitMS = case MaxRandomPubWaitMS - MinRandomPubWaitMS of
+                          Period when Period =< 0 -> MinRandomPubWaitMS;
+                          Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
+                      end,
     case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
             case PubSub of
                 conn -> ok;
                 sub -> subscribe(Client, AllOpts);
-                pub -> self() ! publish
+                pub -> erlang:send_after(RandomPubWaitMS, self(), publish)
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
