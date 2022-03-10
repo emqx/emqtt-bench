@@ -83,7 +83,10 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {inflight, $F,"inflight", {integer, 1},
-          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
+          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
+         {wait_before_publishing, $w, "wait-before-publishing", {boolean, false},
+          "wait for all publishers to have (at least tried to) connected "
+          "before starting publishing"}
         ]).
 
 -define(SUB_OPTS,
@@ -249,7 +252,17 @@ main(pub, Opts) ->
                   StrPayload -> StrPayload
               end,
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
-    start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
+    PublishSignalPid =
+        case proplists:get_value(wait_before_publishing, Opts) of
+            true ->
+                spawn(fun() -> receive go -> exit(start_publishing) end end);
+            false ->
+                undefined
+        end,
+    start(pub, [ {payload, Payload}
+               , {limit_fun, MsgLimit}
+               , {publish_signal_pid, PublishSignalPid}
+               | Opts]);
 
 main(conn, Opts) ->
     start(conn, Opts).
@@ -410,7 +423,13 @@ cnt_ref() -> persistent_term:get(?MODULE).
 run(Parent, PubSub, Opts) ->
     run(Parent, proplists:get_value(count, Opts), PubSub, Opts).
 
-run(_Parent, 0, _PubSub, _Opts) ->
+run(_Parent, 0, _PubSub, Opts) ->
+    case proplists:get_value(publish_signal_pid, Opts) of
+        Pid when is_pid(Pid) ->
+            Pid ! go;
+        _ ->
+            ok
+    end,
     done;
 run(Parent, N, PubSub, Opts) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts) of
@@ -427,6 +446,11 @@ run(Parent, N, PubSub, Opts) ->
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
+    MRef = case proplists:get_value(publish_signal_pid, Opts) of
+               Pid when is_pid(Pid) ->
+                   monitor(process, Pid);
+               _ -> undefined
+           end,
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
@@ -437,8 +461,8 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link(MqttOpts1),
+    AllOpts  = [{seq, N}, {client_id, ClientId}, {publish_signal_mref, MRef} | Opts],
+    {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     case ConnRet of
@@ -447,7 +471,14 @@ connect(Parent, N, PubSub, Opts) ->
             case PubSub of
                 conn -> ok;
                 sub -> subscribe(Client, AllOpts);
-                pub -> self() ! publish
+                pub -> case MRef of
+                           undefined ->
+                               self() ! publish;
+                           _ ->
+                               %% send `publish' only when all publishers
+                               %% are in place.
+                               ok
+                       end
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
@@ -456,7 +487,11 @@ connect(Parent, N, PubSub, Opts) ->
 
 loop(Parent, N, Client, PubSub, Opts) ->
     Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
+    MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
+        {'DOWN', MRef, process, _Pid, start_publishing} ->
+            self() ! publish,
+            loop(Parent, N, Client, PubSub, Opts);
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
                 true ->
@@ -735,7 +770,16 @@ replace_opts(Opts, NewOpts) ->
 %% trim opts to save proc stack mem.
 loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
-                         lists:member(K, [interval_of_msg, payload, qos, retain, topic, lowmem, limit_fun, seq])
+                         lists:member(K, [ interval_of_msg
+                                         , payload
+                                         , qos
+                                         , retain
+                                         , topic
+                                         , lowmem
+                                         , limit_fun
+                                         , seq
+                                         , publish_signal_mref
+                                         ])
                  end, Opts).
 
 -spec maybe_start_quicer() -> boolean().
