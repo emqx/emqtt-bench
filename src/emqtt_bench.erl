@@ -83,7 +83,16 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {inflight, $F,"inflight", {integer, 1},
-          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"}
+          "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
+         {wait_before_publishing, $w, "wait-before-publishing", {boolean, false},
+          "wait for all publishers to have (at least tried to) connected "
+          "before starting publishing"},
+         {max_random_wait, undefined,"max-random-wait", {integer, 0},
+          "maximum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"},
+         {min_random_wait, undefined,"min-random-wait", {integer, 0},
+          "minimum randomized period in ms that each publisher will wait before "
+          "starting to publish (uniform distribution)"}
         ]).
 
 -define(SUB_OPTS,
@@ -249,7 +258,17 @@ main(pub, Opts) ->
                   StrPayload -> StrPayload
               end,
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
-    start(pub, [{payload, Payload}, {limit_fun, MsgLimit} | Opts]);
+    PublishSignalPid =
+        case proplists:get_value(wait_before_publishing, Opts) of
+            true ->
+                spawn(fun() -> receive go -> exit(start_publishing) end end);
+            false ->
+                undefined
+        end,
+    start(pub, [ {payload, Payload}
+               , {limit_fun, MsgLimit}
+               , {publish_signal_pid, PublishSignalPid}
+               | Opts]);
 
 main(conn, Opts) ->
     start(conn, Opts).
@@ -410,7 +429,13 @@ cnt_ref() -> persistent_term:get(?MODULE).
 run(Parent, PubSub, Opts) ->
     run(Parent, proplists:get_value(count, Opts), PubSub, Opts).
 
-run(_Parent, 0, _PubSub, _Opts) ->
+run(_Parent, 0, _PubSub, Opts) ->
+    case proplists:get_value(publish_signal_pid, Opts) of
+        Pid when is_pid(Pid) ->
+            Pid ! go;
+        _ ->
+            ok
+    end,
     done;
 run(Parent, N, PubSub, Opts) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts) of
@@ -427,6 +452,11 @@ run(Parent, N, PubSub, Opts) ->
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
+    MRef = case proplists:get_value(publish_signal_pid, Opts) of
+               Pid when is_pid(Pid) ->
+                   monitor(process, Pid);
+               _ -> undefined
+           end,
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
@@ -437,8 +467,13 @@ connect(Parent, N, PubSub, Opts) ->
                   conn -> [{force_ping, true} | MqttOpts];
                   _ -> MqttOpts
                 end,
-    AllOpts  = [{seq, N}, {client_id, ClientId} | Opts],
-	{ok, Client} = emqtt:start_link(MqttOpts1),
+    RandomPubWaitMS = random_pub_wait_period(Opts),
+    AllOpts  = [ {seq, N}
+               , {client_id, ClientId}
+               , {publish_signal_mref, MRef}
+               , {pub_start_wait, RandomPubWaitMS}
+               | Opts],
+    {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     case ConnRet of
@@ -447,7 +482,14 @@ connect(Parent, N, PubSub, Opts) ->
             case PubSub of
                 conn -> ok;
                 sub -> subscribe(Client, AllOpts);
-                pub -> self() ! publish
+                pub -> case MRef of
+                           undefined ->
+                               erlang:send_after(RandomPubWaitMS, self(), publish);
+                           _ ->
+                               %% send `publish' only when all publishers
+                               %% are in place.
+                               ok
+                       end
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
@@ -456,7 +498,12 @@ connect(Parent, N, PubSub, Opts) ->
 
 loop(Parent, N, Client, PubSub, Opts) ->
     Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
+    MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
+        {'DOWN', MRef, process, _Pid, start_publishing} ->
+            RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
+            erlang:send_after(RandomPubWaitMS, self(), publish),
+            loop(Parent, N, Client, PubSub, Opts);
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
                 true ->
@@ -735,7 +782,17 @@ replace_opts(Opts, NewOpts) ->
 %% trim opts to save proc stack mem.
 loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
-                         lists:member(K, [interval_of_msg, payload, qos, retain, topic, lowmem, limit_fun, seq])
+                         lists:member(K, [ interval_of_msg
+                                         , payload
+                                         , qos
+                                         , retain
+                                         , topic
+                                         , lowmem
+                                         , limit_fun
+                                         , seq
+                                         , publish_signal_mref
+                                         , pub_start_wait
+                                         ])
                  end, Opts).
 
 -spec maybe_start_quicer() -> boolean().
@@ -769,3 +826,11 @@ is_centos_6() ->
 
 is_win32() ->
     win32 =:= element(1, os:type()).
+
+random_pub_wait_period(Opts) ->
+    MaxRandomPubWaitMS = proplists:get_value(max_random_wait, Opts, 0),
+    MinRandomPubWaitMS = proplists:get_value(min_random_wait, Opts, 0),
+    case MaxRandomPubWaitMS - MinRandomPubWaitMS of
+        Period when Period =< 0 -> MinRandomPubWaitMS;
+        Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
+    end.
