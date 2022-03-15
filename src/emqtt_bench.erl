@@ -92,7 +92,9 @@
           "starting to publish (uniform distribution)"},
          {min_random_wait, undefined,"min-random-wait", {integer, 0},
           "minimum randomized period in ms that each publisher will wait before "
-          "starting to publish (uniform distribution)"}
+          "starting to publish (uniform distribution)"},
+         {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
+          "number of times to retry estabilishing a connection before giving up"}
         ]).
 
 -define(SUB_OPTS,
@@ -140,7 +142,9 @@
          {prefix, undefined, "prefix", string, "client id prefix"},
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
-         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
+          "number of times to retry estabilishing a connection before giving up"}
         ]).
 
 -define(CONN_OPTS, [
@@ -182,10 +186,11 @@
          {prefix, undefined, "prefix", string, "client id prefix"},
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
-         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"}
+         {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
+          "number of times to retry estabilishing a connection before giving up"}
         ]).
 
--define(TAB, ?MODULE).
 -define(COUNTERS, 16).
 -define(IDX_RECV, 2).
 -define(IDX_SUB, 3).
@@ -493,7 +498,17 @@ connect(Parent, N, PubSub, Opts) ->
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
-            io:format("client(~w): connect error - ~p~n", [N, Error])
+            io:format("client(~w): connect error - ~p~n", [N, Error]),
+            MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
+            Retries = proplists:get_value(connection_attempts, Opts, 0),
+            case Retries >= MaxRetries of
+                true ->
+                    ok;
+                false ->
+                    io:format("client(~w): retrying...~n", [N]),
+                    NOpts = proplists:delete(connection_attempts, Opts),
+                    connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
+            end
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
