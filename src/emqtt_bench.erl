@@ -546,6 +546,9 @@ loop(Parent, N, Client, PubSub, Opts) ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
             loop(Parent, N, Client, PubSub, Opts);
+        {disconnected, ReasonCode, _Meta} ->
+            io:format("client(~w): disconnected with reason ~w: ~p~n",
+                      [N, ReasonCode, emqtt:reason_code_name(ReasonCode)]);
         Other ->
             io:format("client(~w): discarded unkonwn message ~p~n", [N, Other]),
             loop(Parent, N, Client, PubSub, Opts)
