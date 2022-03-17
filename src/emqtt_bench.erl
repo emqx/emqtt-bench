@@ -450,9 +450,9 @@ run(Parent, N, PubSub, Opts) ->
                         []
                 end,
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-             SpawnOpts),
-	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts).
+              SpawnOpts),
+    timer:sleep(proplists:get_value(interval, Opts)),
+    run(Parent, N-1, PubSub, Opts).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
@@ -512,7 +512,7 @@ connect(Parent, N, PubSub, Opts) ->
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
-    Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
+    Idle = max(proplists:get_value(interval_of_msg, Opts, 0) div 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
