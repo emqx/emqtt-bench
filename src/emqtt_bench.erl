@@ -307,6 +307,7 @@ start(PubSub, Opts) ->
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
+    garbage_collect(),
     main_loop(os:timestamp(), _Count = 0).
 
 prepare(Opts) ->
@@ -342,6 +343,7 @@ main_loop(Uptime, Count0) ->
             main_loop(Uptime, Count);
         stats ->
             print_stats(Uptime),
+            garbage_collect(),
             main_loop(Uptime, Count0);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
@@ -445,14 +447,17 @@ run(_Parent, 0, _PubSub, Opts) ->
 run(Parent, N, PubSub, Opts) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts) of
                     true ->
-                        [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
+                        [ {min_heap_size, 16}
+                        , {min_bin_vheap_size, 16}
+                        , {fullsweep_after, 1_000}
+                        ];
                     false ->
                         []
                 end,
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-             SpawnOpts),
-	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts).
+              SpawnOpts),
+    timer:sleep(proplists:get_value(interval, Opts)),
+    run(Parent, N-1, PubSub, Opts).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
