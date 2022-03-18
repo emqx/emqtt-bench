@@ -360,6 +360,7 @@ main_loop(Uptime, Count0) ->
             return_print("publish complete", []);
         stats ->
             print_stats(Uptime),
+            garbage_collect(),
             main_loop(Uptime, Count0);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
@@ -474,7 +475,10 @@ run(_Parent, 0, _PubSub, Opts, _AddrList, _HostList) ->
 run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
-                        [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
+                        [ {min_heap_size, 16}
+                        , {min_bin_vheap_size, 16}
+                        , {fullsweep_after, 1_000}
+                        ];
                     false ->
                         []
                 end,
@@ -484,9 +488,9 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                                ]),
 
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-             SpawnOpts),
-	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts, AddrList, HostList).
+              SpawnOpts),
+    timer:sleep(proplists:get_value(interval, Opts)),
+    run(Parent, N-1, PubSub, Opts, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
