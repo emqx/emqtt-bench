@@ -930,13 +930,7 @@ maybe_spawn_gc_enforcer(Opts) ->
                           timer:sleep(Interval),
                           lists:foreach(
                             fun(P) -> erlang:garbage_collect(P, [{type, major}]) end,
-                            [P || P <- processes(),
-                                  case proplists:get_value( initial_call
-                                                          , process_info(P, [initial_call])
-                                                          ) of
-                                      {emqtt_bench, connect, _} -> true;
-                                      _ -> false
-                                  end]),
+                            processes()),
                           MajorGC()
                   end);
         {true, _} ->
