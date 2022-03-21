@@ -630,9 +630,9 @@ subscribe(Client, N, Opts) ->
     case Res of
         {ok, _, _} ->
             inc_counter(sub);
-        {error, _Reason} ->
+        {error, Reason} ->
             inc_counter(sub_fail),
-            io:format("client(~w): subscribe error - ~p~n", [N, Error]),
+            io:format("client(~w): subscribe error - ~p~n", [N, Reason]),
             emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
     end,
     Res.
