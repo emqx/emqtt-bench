@@ -94,7 +94,11 @@
           "minimum randomized period in ms that each publisher will wait before "
           "starting to publish (uniform distribution)"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(SUB_OPTS,
@@ -144,7 +148,11 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(CONN_OPTS, [
@@ -188,7 +196,11 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(COUNTERS, 16).
@@ -307,7 +319,7 @@ start(PubSub, Opts) ->
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
-    garbage_collect(),
+    maybe_spawn_gc_enforcer(Opts),
     main_loop(os:timestamp(), _Count = 0).
 
 prepare(Opts) ->
@@ -856,4 +868,30 @@ random_pub_wait_period(Opts) ->
     case MaxRandomPubWaitMS - MinRandomPubWaitMS of
         Period when Period =< 0 -> MinRandomPubWaitMS;
         Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
+    end.
+
+maybe_spawn_gc_enforcer(Opts) ->
+    LowMemMode = proplists:get_value(lowmem, Opts),
+    ForceMajorGCInterval = proplists:get_value(force_major_gc_interval, Opts, 0),
+    case {LowMemMode, ForceMajorGCInterval} of
+        {false, _} ->
+            ignore;
+        {true, 0} ->
+            ignore;
+        {true, Interval} when Interval > 0 ->
+            spawn(fun MajorGC () ->
+                          timer:sleep(Interval),
+                          lists:foreach(
+                            fun(P) -> erlang:garbage_collect(P, [{type, major}]) end,
+                            [P || P <- processes(),
+                                  case proplists:get_value( initial_call
+                                                          , process_info(P, [initial_call])
+                                                          ) of
+                                      {emqtt_bench, connect, _} -> true;
+                                      _ -> false
+                                  end]),
+                          MajorGC()
+                  end);
+        {true, _} ->
+            ignore
     end.
