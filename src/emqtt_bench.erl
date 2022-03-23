@@ -918,7 +918,7 @@ random_pub_wait_period(Opts) ->
     end.
 
 maybe_spawn_gc_enforcer(Opts) ->
-    LowMemMode = proplists:get_value(lowmem, Opts),
+    LowMemMode = proplists:get_bool(lowmem, Opts),
     ForceMajorGCInterval = proplists:get_value(force_major_gc_interval, Opts, 0),
     case {LowMemMode, ForceMajorGCInterval} of
         {false, _} ->
