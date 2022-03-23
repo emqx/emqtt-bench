@@ -515,6 +515,7 @@ connect(Parent, N, PubSub, Opts) ->
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
+    ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
     case ConnRet of
         {ok, _Props} ->
             Res =
@@ -532,7 +533,6 @@ connect(Parent, N, PubSub, Opts) ->
                 end,
             case Res of
                 {error, _SubscribeError} ->
-                    ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
                     maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
                 _ ->
                     inc_counter(connect_succ),
@@ -541,7 +541,6 @@ connect(Parent, N, PubSub, Opts) ->
             end;
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
-            ContinueFn = fun() -> ok end,
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
     end.
 
