@@ -291,7 +291,7 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
-    prepare(Opts), init(),
+    prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
     AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
                     false ->
@@ -322,9 +322,15 @@ start(PubSub, Opts) ->
     maybe_spawn_gc_enforcer(Opts),
     main_loop(os:timestamp(), _Count = 0).
 
-prepare(Opts) ->
-    Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
-    proplists:get_bool(dist, Opts) andalso net_kernel:start([Sname, shortnames]),
+prepare(PubSub, Opts) ->
+    Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p-~p", [?MODULE, PubSub, rand:uniform(1000)]))),
+    case proplists:get_bool(dist, Opts) of
+        true ->
+            net_kernel:start([Sname, shortnames]),
+            io:format("Starting distribution with name ~p~n", [Sname]);
+        false ->
+            ok
+    end,
     case proplists:get_bool(quic, Opts) of
         true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
         _ ->
