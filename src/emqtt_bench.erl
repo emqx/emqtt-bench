@@ -569,14 +569,14 @@ loop(Parent, N, Client, PubSub, Opts) ->
                     Parent ! publish_complete,
                     exit(normal)
             end;
-        {publish, _Publish} ->
+        published ->
             inc_counter(recv),
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
         {'EXIT', _Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason]);
-        {puback, _} ->
+        puback ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
             loop(Parent, N, Client, PubSub, Opts);
@@ -666,7 +666,12 @@ session_property_opts([], Props) ->
     Props.
 
 mqtt_opts(Opts) ->
-    mqtt_opts(Opts, []).
+    WorkerPid = self(),
+    Handler = #{ publish => fun(_) -> WorkerPid ! published end
+               , puback => fun(_) -> WorkerPid ! puback end
+               , disconnected => fun({ReasonCode, _}) -> WorkerPid ! {disconnected, ReasonCode, #{}} end
+               },
+    mqtt_opts(Opts, [{msg_handler, Handler}]).
 
 mqtt_opts([], Acc) ->
     Acc;
