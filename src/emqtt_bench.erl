@@ -472,10 +472,79 @@ run(Parent, N, PubSub, Opts) ->
                     false ->
                         []
                 end,
-    spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-              SpawnOpts),
-    timer:sleep(proplists:get_value(interval, Opts)),
-    run(Parent, N-1, PubSub, Opts).
+    case PubSub of
+        pub ->
+            connect_pub(Parent, N, queue:new(), Opts);
+        _ ->
+            spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
+                      SpawnOpts),
+            timer:sleep(proplists:get_value(interval, Opts)),
+            run(Parent, N-1, PubSub, Opts)
+    end.
+
+connect_pub(Parent, 0, Clients, Opts) ->
+    StartNum = proplists:get_value(startnumber, Opts),
+    case proplists:get_value(publish_signal_pid, Opts) of
+        Pid when is_pid(Pid) ->
+            Pid ! go;
+        _ ->
+            ok
+    end,
+    ClientId = client_id(pub, StartNum, Opts),
+    RandomPubWaitMS = random_pub_wait_period(Opts),
+    AllOpts  = [ {seq, StartNum}
+               , {client_id, ClientId}
+               , {pub_start_wait, RandomPubWaitMS}
+               | Opts],
+    loop_pub(Parent, Clients, loop_opts(AllOpts));
+connect_pub(Parent, N, Clients, Opts0) when N > 0 ->
+    process_flag(trap_exit, true),
+    StartNum = proplists:get_value(startnumber, Opts0),
+    rand:seed(exsplus, erlang:timestamp()),
+    MRef = case {proplists:get_value(publish_signal_mref, Opts0),
+                 proplists:get_value(publish_signal_pid, Opts0)} of
+               {MRef0, _} when is_reference(MRef0) -> MRef0;
+               {_, Pid} when is_pid(Pid) ->
+                   monitor(process, Pid);
+               _ -> undefined
+           end,
+    Opts = [{publish_signal_mref, MRef} | Opts0],
+    ClientId = client_id(pub, N + StartNum, Opts),
+    MqttOpts = [{clientid, ClientId},
+                {tcp_opts, tcp_opts(Opts)},
+                {ssl_opts, ssl_opts(Opts)}]
+        ++ session_property_opts(Opts)
+        ++ mqtt_opts(Opts),
+    RandomPubWaitMS = random_pub_wait_period(Opts),
+    {ok, Client} = emqtt:start_link(MqttOpts),
+    ConnectFun = connect_fun(Opts),
+    ConnRet = emqtt:ConnectFun(Client),
+    case ConnRet of
+        {ok, _Props} ->
+            Parent ! {connected, N, Client},
+            case MRef of
+                undefined ->
+                    erlang:send_after(RandomPubWaitMS, self(), publish);
+                _ ->
+                    %% send `publish' only when all publishers
+                    %% are in place.
+                    ok
+            end,
+            timer:sleep(proplists:get_value(interval, Opts)),
+            connect_pub(Parent, N - 1, queue:in_r(Client, Clients), proplists:delete(connection_attempts, Opts));
+        {error, Error} ->
+            io:format("client(~w): connect error - ~p~n", [N, Error]),
+            MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
+            Retries = proplists:get_value(connection_attempts, Opts, 0),
+            case Retries >= MaxRetries of
+                true ->
+                    connect_pub(Parent, N - 1, Clients, proplists:delete(connection_attempts, Opts));
+                false ->
+                    io:format("client(~w): retrying...~n", [N]),
+                    NOpts = proplists:delete(connection_attempts, Opts),
+                    connect_pub(Parent, N, Clients, [{connection_attempts, Retries + 1} | NOpts])
+            end
+    end.
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
@@ -543,6 +612,65 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
             io:format("client(~w): retrying...~n", [N]),
             NOpts = proplists:delete(connection_attempts, Opts),
             connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
+    end.
+
+loop_pub(Parent, Clients, Opts) ->
+    Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
+    MRef = proplists:get_value(publish_signal_mref, Opts),
+    receive
+        {'DOWN', MRef, process, _Pid, start_publishing} ->
+            RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
+            NumClients = queue:len(Clients),
+            lists:foreach(fun(_) ->
+                                  erlang:send_after(RandomPubWaitMS, self(), publish)
+                          end,
+                         lists:seq(1, NumClients)),
+            loop_pub(Parent, Clients, Opts);
+        publish ->
+            case (proplists:get_value(limit_fun, Opts))() of
+                true ->
+                    {{value, Client}, NClients} = queue:out(Clients),
+                    %% this call hangs if emqtt inflight is full
+                    case publish(Client, Opts) of
+                        ok -> next_publish(Opts);
+                        {ok, _} -> next_publish(Opts);
+                        {error, Reason} ->
+                            inc_counter(pub_fail),
+                            io:format("client: publish error - ~p~n", [Reason])
+                    end,
+                    loop_pub(Parent, queue:in_r(Client, NClients), Opts);
+                _ ->
+                    Parent ! publish_complete,
+                    exit(normal)
+            end;
+        published ->
+            inc_counter(recv),
+            loop_pub(Parent, Clients, Opts);
+        {'EXIT', _Client, normal} ->
+            ok;
+        {'EXIT', _Client, Reason} ->
+            io:format("client: EXIT for ~p~n", [Reason]);
+        puback ->
+            %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
+            inc_counter(pub_succ),
+            loop_pub(Parent, Clients, Opts);
+        {disconnected, ReasonCode, _Meta} ->
+            io:format("client: disconnected with reason ~w: ~p~n",
+                      [ReasonCode, emqtt:reason_code_name(ReasonCode)]);
+        Other ->
+            io:format("client: discarded unkonwn message ~p~n", [Other]),
+            loop_pub(Parent, Clients, Opts)
+    after
+        Idle ->
+            case proplists:get_bool(lowmem, Opts) of
+                true ->
+                    LClients = queue:to_list(Clients),
+                    lists:foreach(fun(C) -> garbage_collect(C, [{type, major}]) end, LClients),
+                    erlang:garbage_collect(self(), [{type, major}]);
+                false ->
+                    skip
+            end,
+            proc_lib:hibernate(?MODULE, loop_pub, [Parent, Clients, Opts])
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
@@ -894,7 +1022,7 @@ random_pub_wait_period(Opts) ->
     end.
 
 maybe_spawn_gc_enforcer(Opts) ->
-    LowMemMode = proplists:get_value(lowmem, Opts),
+    LowMemMode = proplists:get_bool(lowmem, Opts),
     ForceMajorGCInterval = proplists:get_value(force_major_gc_interval, Opts, 0),
     case {LowMemMode, ForceMajorGCInterval} of
         {false, _} ->
