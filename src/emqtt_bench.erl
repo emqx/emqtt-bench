@@ -519,6 +519,7 @@ connect_pub(Parent, N, Clients, Opts0) when N > 0 ->
     {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
+    queue:is_empty(Clients) orelse maybe_publish(Parent, Clients, Opts),
     case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
@@ -544,6 +545,31 @@ connect_pub(Parent, N, Clients, Opts0) when N > 0 ->
                     NOpts = proplists:delete(connection_attempts, Opts),
                     connect_pub(Parent, N, Clients, [{connection_attempts, Retries + 1} | NOpts])
             end
+    end.
+
+%% to avoid massive hit when everyone connects
+maybe_publish(Parent, Clients0, Opts) ->
+    receive
+        publish ->
+            case (proplists:get_value(limit_fun, Opts))() of
+                true ->
+                    {{value, Client}, NClients} = queue:out(Clients0),
+                    %% this call hangs if emqtt inflight is full
+                    case publish(Client, Opts) of
+                        ok -> next_publish(Opts);
+                        {ok, _} -> next_publish(Opts);
+                        {error, Reason} ->
+                            inc_counter(pub_fail),
+                            io:format("client: publish error - ~p~n", [Reason])
+                    end,
+                    NClients;
+                _ ->
+                    Parent ! publish_complete,
+                    exit(normal)
+            end
+    after
+        0 ->
+            Clients0
     end.
 
 connect(Parent, N, PubSub, Opts) ->
