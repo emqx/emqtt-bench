@@ -21,7 +21,7 @@
 -export([ main/1
         , main/2
         , start/2
-        , run/3
+        , run/4
         , connect/4
         , loop/5
         ]).
@@ -286,28 +286,21 @@ main(conn, Opts) ->
 start(PubSub, Opts) ->
     prepare(Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
+    Rate = proplists:get_value(conn_rate, Opts),
     AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
                     false ->
                         [IfAddr];
                     true ->
                        string:tokens(IfAddr, ",")
                 end,
-    NoSch = erlang:system_info(schedulers_online),
     NoAddrs = length(AddrList),
-    NoWorkers = case NoSch > NoAddrs of
-                    true ->
-                        NoSch;
-                    _ ->
-                        NoAddrs
-                end,
+    NoWorkers = max(erlang:system_info(schedulers_online), ceil(Rate / 1000)),
     Count = proplists:get_value(count, Opts),
     CntPerWorker = Count div NoWorkers,
     Rem = Count rem NoWorkers,
-    Interval = case proplists:get_value(conn_rate, Opts) of
+    Interval = case Rate of
                    0 -> %% conn_rate is not set
                        proplists:get_value(interval, Opts) * NoWorkers;
-                   ConnRate when ConnRate > 1000 andalso ConnRate div NoWorkers > 1000 ->
-                       error("We need more workers (ifaddrs) to support conn rate > 1000/s");
                    ConnRate ->
                        1000 * NoWorkers div ConnRate
                end,
@@ -323,22 +316,13 @@ start(PubSub, Opts) ->
                                           false ->
                                               [{count, CntPerWorker}]
                                       end,
-                          AddrPoolOffset = case P > NoAddrs of
-                                               true ->
-                                                   NoWorkers rem NoAddrs + 1;
-                                               false ->
-                                                   %% note, P starts from 1
-                                                   P
-                                           end,
-
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
-                                                      {ifaddr, lists:nth(AddrPoolOffset, AddrList)},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
-                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
+                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
-    main_loop(os:timestamp(), _Count = 0).
+    main_loop(erlang:monotonic_time(millisecond), _Count = 0).
 
 prepare(Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
@@ -468,10 +452,11 @@ inc_counter(connect_fail) ->
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
 
-run(Parent, PubSub, Opts) ->
-    run(Parent, proplists:get_value(count, Opts), PubSub, Opts).
+run(Parent, PubSub, Opts, AddrList) ->
+    run(Parent, proplists:get_value(count, Opts), PubSub, Opts, AddrList).
 
-run(_Parent, 0, _PubSub, Opts) ->
+
+run(_Parent, 0, _PubSub, Opts, _AddrList) ->
     case proplists:get_value(publish_signal_pid, Opts) of
         Pid when is_pid(Pid) ->
             Pid ! go;
@@ -479,17 +464,20 @@ run(_Parent, 0, _PubSub, Opts) ->
             ok
     end,
     done;
-run(Parent, N, PubSub, Opts) ->
-    SpawnOpts = case proplists:get_bool(lowmem, Opts) of
+run(Parent, N, PubSub, Opts0, AddrList) ->
+    SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
                         [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
                     false ->
                         []
                 end,
+    AddrPoolOffset = N rem length(AddrList),
+    Opts = replace_opts(Opts0, [{ifaddr, lists:nth(AddrPoolOffset + 1, AddrList)}]),
+
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
              SpawnOpts),
 	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts).
+	run(Parent, N-1, PubSub, Opts, AddrList).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
