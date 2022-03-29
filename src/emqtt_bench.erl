@@ -338,15 +338,17 @@ init() ->
     process_flag(trap_exit, true),
     CRef = counters:new(?COUNTERS, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
-    put({stats, recv}, 0),
-    put({stats, pub}, 0),
-    put({stats, pub_succ}, 0),
-    put({stats, pub_fail}, 0),
-    put({stats, pub_overrun}, 0),
-    put({stats, sub_fail}, 0),
-    put({stats, sub}, 0),
-    put({stats, connect_succ}, 0),
-    put({stats, connect_fail}, 0).
+    Now = erlang:monotonic_time(millisecond),
+    InitS = {Now, 0},
+    put({stats, recv}, InitS),
+    put({stats, pub}, InitS),
+    put({stats, pub_succ}, InitS),
+    put({stats, pub_fail}, InitS),
+    put({stats, pub_overrun}, InitS),
+    put({stats, sub_fail}, InitS),
+    put({stats, sub}, InitS),
+    put({stats, connect_succ}, InitS),
+    put({stats, connect_fail}, InitS).
 
 
 main_loop(Uptime, Count0) ->
@@ -368,17 +370,18 @@ print_stats(Uptime) ->
 
 print_stats(Uptime, Name) ->
     CurVal = get_counter(Name),
-    LastVal = get({stats, Name}),
+    {LastTS, LastVal} = get({stats, Name}),
     case CurVal == LastVal of
         false ->
-            Tdiff = fmt_tdiff(timer:now_diff(os:timestamp(), Uptime) div 1000),
-            print("~s ~s total=~w rate=~w/sec~n",
-                  [Tdiff, Name, CurVal, CurVal - LastVal]),
-            put({stats, Name}, CurVal);
+            Now = erlang:monotonic_time(millisecond),
+            Elapsed = Now - LastTS,
+            Tdiff = fmt_tdiff(Now - Uptime),
+            print("~s ~s total=~w rate=~.2f/sec~n",
+                  [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]),
+            put({stats, Name}, {Now, CurVal});
         true -> ok
     end.
 
-fmt_tdiff(D) when D < 1000 -> [integer_to_list(D), "ms"];
 fmt_tdiff(D) -> do_fmt_tdiff(D div 1000).
 
 do_fmt_tdiff(S) ->
