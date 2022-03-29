@@ -94,7 +94,8 @@
           "minimum randomized period in ms that each publisher will wait before "
           "starting to publish (uniform distribution)"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(SUB_OPTS,
@@ -144,7 +145,8 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(CONN_OPTS, [
@@ -188,7 +190,8 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
-          "number of times to retry estabilishing a connection before giving up"}
+          "number of times to retry estabilishing a connection before giving up"},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(COUNTERS, 16).
@@ -199,6 +202,8 @@
 -define(IDX_PUB_FAIL, 6).
 -define(IDX_PUB_OVERRUN, 7).
 -define(IDX_PUB_SUCCESS, 8).
+-define(IDX_CONN_SUCCESS, 9).
+-define(IDX_CONN_FAIL, 10).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -287,11 +292,29 @@ start(PubSub, Opts) ->
                     true ->
                        string:tokens(IfAddr, ",")
                 end,
-    NoWorkers = length(AddrList),
+    NoSch = erlang:system_info(schedulers_online),
+    NoAddrs = length(AddrList),
+    NoWorkers = case NoSch > NoAddrs of
+                    true ->
+                        NoSch;
+                    _ ->
+                        NoAddrs
+                end,
     Count = proplists:get_value(count, Opts),
     CntPerWorker = Count div NoWorkers,
     Rem = Count rem NoWorkers,
-    Interval = proplists:get_value(interval, Opts) * NoWorkers,
+    Interval = case proplists:get_value(conn_rate, Opts) of
+                   0 -> %% conn_rate is not set
+                       proplists:get_value(interval, Opts) * NoWorkers;
+                   ConnRate when ConnRate > 1000 andalso ConnRate div NoWorkers > 1000 ->
+                       error("We need more workers (ifaddrs) to support conn rate > 1000/s");
+                   ConnRate ->
+                       1000 * NoWorkers div ConnRate
+               end,
+
+    io:format("Start with ~p workers, addrs pool size: ~p and req interval: ~p ms ~n~n",
+              [NoWorkers, NoAddrs, Interval]),
+    true = (Interval >= 1),
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
                           CountParm = case Rem =/= 0 andalso P == 1 of
@@ -300,8 +323,16 @@ start(PubSub, Opts) ->
                                           false ->
                                               [{count, CntPerWorker}]
                                       end,
+                          AddrPoolOffset = case P > NoAddrs of
+                                               true ->
+                                                   NoWorkers rem NoAddrs + 1;
+                                               false ->
+                                                   %% note, P starts from 1
+                                                   P
+                                           end,
+
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
-                                                      {ifaddr, lists:nth(P, AddrList)},
+                                                      {ifaddr, lists:nth(AddrPoolOffset, AddrList)},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
@@ -329,17 +360,15 @@ init() ->
     put({stats, pub_fail}, 0),
     put({stats, pub_overrun}, 0),
     put({stats, sub_fail}, 0),
-    put({stats, sub}, 0).
+    put({stats, sub}, 0),
+    put({stats, connect_succ}, 0),
+    put({stats, connect_fail}, 0).
 
 
 main_loop(Uptime, Count0) ->
     receive
         publish_complete ->
             return_print("publish complete", []);
-        {connected, _N, _Client} ->
-            Count = Count0 + 1,
-            return_print("connected: ~w", [Count]),
-            main_loop(Uptime, Count);
         stats ->
             print_stats(Uptime),
             main_loop(Uptime, Count0);
@@ -350,7 +379,7 @@ main_loop(Uptime, Count0) ->
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun]],
+        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun, connect_succ, connect_fail]],
     ok.
 
 print_stats(Uptime, Name) ->
@@ -411,7 +440,11 @@ get_counter(sub_fail) ->
 get_counter(pub_fail) ->
     counters:get(cnt_ref(), ?IDX_PUB_FAIL);
 get_counter(pub_overrun) ->
-    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN).
+    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN);
+get_counter(connect_succ) ->
+    counters:get(cnt_ref(), ?IDX_CONN_SUCCESS);
+get_counter(connect_fail) ->
+    counters:get(cnt_ref(), ?IDX_CONN_FAIL).
 
 inc_counter(recv) ->
     counters:add(cnt_ref(), ?IDX_RECV, 1);
@@ -426,7 +459,11 @@ inc_counter(pub_succ) ->
 inc_counter(pub_fail) ->
     counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
 inc_counter(pub_overrun) ->
-    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1).
+    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1);
+inc_counter(connect_succ) ->
+    counters:add(cnt_ref(), ?IDX_CONN_SUCCESS, 1);
+inc_counter(connect_fail) ->
+    counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -483,7 +520,7 @@ connect(Parent, N, PubSub, Opts) ->
     ConnRet = emqtt:ConnectFun(Client),
     case ConnRet of
         {ok, _Props} ->
-            Parent ! {connected, N, Client},
+            inc_counter(connect_succ),
             case PubSub of
                 conn -> ok;
                 sub -> subscribe(Client, AllOpts);
@@ -498,6 +535,7 @@ connect(Parent, N, PubSub, Opts) ->
             end,
             loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
         {error, Error} ->
+            inc_counter(connect_fail),
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
             Retries = proplists:get_value(connection_attempts, Opts, 0),
