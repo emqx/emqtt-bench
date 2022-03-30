@@ -284,7 +284,7 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
-    prepare(Opts), init(),
+    prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
     Rate = proplists:get_value(conn_rate, Opts),
     AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
@@ -324,9 +324,15 @@ start(PubSub, Opts) ->
     timer:send_interval(1000, stats),
     main_loop(erlang:monotonic_time(millisecond), _Count = 0).
 
-prepare(Opts) ->
-    Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p", [?MODULE, rand:uniform(1000)]))),
-    proplists:get_bool(dist, Opts) andalso net_kernel:start([Sname, shortnames]),
+prepare(PubSub, Opts) ->
+    Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p-~p", [?MODULE, PubSub, rand:uniform(1000)]))),
+    case proplists:get_bool(dist, Opts) of
+        true ->
+            net_kernel:start([Sname, shortnames]),
+            io:format("Starting distribution with name ~p~n", [Sname]);
+        false ->
+            ok
+    end,
     case proplists:get_bool(quic, Opts) of
         true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
         _ ->
