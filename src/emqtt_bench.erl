@@ -515,35 +515,47 @@ connect(Parent, N, PubSub, Opts) ->
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
+    ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
     case ConnRet of
         {ok, _Props} ->
-            inc_counter(connect_succ),
-            case PubSub of
-                conn -> ok;
-                sub -> subscribe(Client, AllOpts);
-                pub -> case MRef of
-                           undefined ->
-                               erlang:send_after(RandomPubWaitMS, self(), publish);
-                           _ ->
-                               %% send `publish' only when all publishers
-                               %% are in place.
-                               ok
-                       end
-            end,
-            loop(Parent, N, Client, PubSub, loop_opts(AllOpts));
+            Res =
+                case PubSub of
+                    conn -> ok;
+                    sub -> subscribe(Client, N, AllOpts);
+                    pub -> case MRef of
+                               undefined ->
+                                   erlang:send_after(RandomPubWaitMS, self(), publish);
+                               _ ->
+                                   %% send `publish' only when all publishers
+                                   %% are in place.
+                                   ok
+                           end
+                end,
+            case Res of
+                {error, _SubscribeError} ->
+                    maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
+                _ ->
+                    inc_counter(connect_succ),
+                    PubSub =:= sub andalso inc_counter(sub),
+                    loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
+            end;
         {error, Error} ->
-            inc_counter(connect_fail),
             io:format("client(~w): connect error - ~p~n", [N, Error]),
-            MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
-            Retries = proplists:get_value(connection_attempts, Opts, 0),
-            case Retries >= MaxRetries of
-                true ->
-                    ok;
-                false ->
-                    io:format("client(~w): retrying...~n", [N]),
-                    NOpts = proplists:delete(connection_attempts, Opts),
-                    connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
-            end
+            maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
+    end.
+
+maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
+    MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
+    Retries = proplists:get_value(connection_attempts, Opts, 0),
+    case Retries >= MaxRetries of
+        true ->
+            inc_counter(connect_fail),
+            PubSub =:= sub andalso inc_counter(sub_faill),
+            ContinueFn();
+        false ->
+            io:format("client(~w): retrying...~n", [N]),
+            NOpts = proplists:delete(connection_attempts, Opts),
+            connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
@@ -631,14 +643,14 @@ consumer_pub_msg_fun_init(N) when is_integer(N), N > 0 ->
         end
     end.
 
-subscribe(Client, Opts) ->
+subscribe(Client, N, Opts) ->
     Qos = proplists:get_value(qos, Opts),
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
     case Res of
         {ok, _, _} ->
-            inc_counter(sub);
-        {error, _Reason} ->
-            inc_counter(sub_fail),
+            ok;
+        {error, Reason} ->
+            io:format("client(~w): subscribe error - ~p~n", [N, Reason]),
             emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
     end,
     Res.
