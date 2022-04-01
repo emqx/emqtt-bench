@@ -497,7 +497,7 @@ connect_pub(Parent, 0, Clients, Opts) ->
                , {pub_start_wait, RandomPubWaitMS}
                | Opts],
     loop_pub(Parent, Clients, loop_opts(AllOpts));
-connect_pub(Parent, N, Clients, Opts0) when N > 0 ->
+connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
     process_flag(trap_exit, true),
     StartNum = proplists:get_value(startnumber, Opts0),
     rand:seed(exsplus, erlang:timestamp()),
@@ -519,7 +519,10 @@ connect_pub(Parent, N, Clients, Opts0) when N > 0 ->
     {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
-    queue:is_empty(Clients) orelse maybe_publish(Parent, Clients, Opts),
+    Clients = case queue:is_empty(Clients0) of
+                  true -> Clients0;
+                  false -> maybe_publish(Parent, Clients0, Opts)
+              end,
     case ConnRet of
         {ok, _Props} ->
             Parent ! {connected, N, Client},
