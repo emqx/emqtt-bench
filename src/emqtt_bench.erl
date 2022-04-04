@@ -495,6 +495,7 @@ connect_pub(Parent, 0, Clients, Opts) ->
     AllOpts  = [ {seq, StartNum}
                , {client_id, ClientId}
                , {pub_start_wait, RandomPubWaitMS}
+               , {loop_pid, self()}
                | Opts],
     loop_pub(Parent, Clients, loop_opts(AllOpts));
 connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
@@ -521,7 +522,10 @@ connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
     ConnRet = emqtt:ConnectFun(Client),
     Clients = case queue:is_empty(Clients0) of
                   true -> Clients0;
-                  false -> maybe_publish(Parent, Clients0, Opts)
+                  false ->
+                      {{value, Client1}, NClients} = queue:out(Clients0),
+                      maybe_publish(Parent, Client1, Opts),
+                      queue:in_r(Client1, NClients)
               end,
     case ConnRet of
         {ok, _Props} ->
@@ -551,28 +555,29 @@ connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
     end.
 
 %% to avoid massive hit when everyone connects
-maybe_publish(Parent, Clients0, Opts) ->
+maybe_publish(Parent, Client, Opts) ->
     receive
         publish ->
-            case (proplists:get_value(limit_fun, Opts))() of
-                true ->
-                    {{value, Client}, NClients} = queue:out(Clients0),
-                    %% this call hangs if emqtt inflight is full
-                    case publish(Client, Opts) of
-                        ok -> next_publish(Opts);
-                        {ok, _} -> next_publish(Opts);
-                        {error, Reason} ->
-                            inc_counter(pub_fail),
-                            io:format("client: publish error - ~p~n", [Reason])
-                    end,
-                    NClients;
-                _ ->
-                    Parent ! publish_complete,
-                    exit(normal)
-            end
+            spawn(
+              fun() ->
+                      case (proplists:get_value(limit_fun, Opts))() of
+                          true ->
+                              %% this call hangs if emqtt inflight is full
+                              case publish(Client, Opts) of
+                                  ok -> next_publish(Opts);
+                                  {ok, _} -> next_publish(Opts);
+                                  {error, Reason} ->
+                                      inc_counter(pub_fail),
+                                      io:format("client: publish error - ~p~n", [Reason])
+                              end;
+                          _ ->
+                              Parent ! publish_complete,
+                              exit(normal)
+                      end
+              end)
     after
         0 ->
-            Clients0
+            ok
     end.
 
 connect(Parent, N, PubSub, Opts) ->
@@ -643,6 +648,7 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
     end.
 
 loop_pub(Parent, Clients, Opts) ->
+    LoopPid = proplists:get_value(loop_pid, Opts, self()),
     Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
@@ -650,7 +656,7 @@ loop_pub(Parent, Clients, Opts) ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
             NumClients = queue:len(Clients),
             lists:foreach(fun(_) ->
-                                  erlang:send_after(RandomPubWaitMS, self(), publish)
+                                  erlang:send_after(RandomPubWaitMS, LoopPid, publish)
                           end,
                          lists:seq(1, NumClients)),
             loop_pub(Parent, Clients, Opts);
@@ -658,14 +664,17 @@ loop_pub(Parent, Clients, Opts) ->
             case (proplists:get_value(limit_fun, Opts))() of
                 true ->
                     {{value, Client}, NClients} = queue:out(Clients),
-                    %% this call hangs if emqtt inflight is full
-                    case publish(Client, Opts) of
-                        ok -> next_publish(Opts);
-                        {ok, _} -> next_publish(Opts);
-                        {error, Reason} ->
-                            inc_counter(pub_fail),
-                            io:format("client: publish error - ~p~n", [Reason])
-                    end,
+                    spawn(
+                      fun() ->
+                              %% this call hangs if emqtt inflight is full
+                              case publish(Client, Opts) of
+                                  ok -> next_publish(Opts);
+                                  {ok, _} -> next_publish(Opts);
+                                  {error, Reason} ->
+                                      inc_counter(pub_fail),
+                                      io:format("client: publish error - ~p~n", [Reason])
+                              end
+                      end),
                     loop_pub(Parent, queue:in_r(Client, NClients), Opts);
                 _ ->
                     Parent ! publish_complete,
@@ -760,6 +769,7 @@ put_publish_begin_time() ->
     ok.
 
 next_publish(Opts) ->
+    LoopPid = proplists:get_value(loop_pid, Opts, self()),
     Interval = proplists:get_value(interval_of_msg, Opts),
     LastT = get(last_publish_ts),
     NowT = erlang:monotonic_time(millisecond),
@@ -768,8 +778,8 @@ next_publish(Opts) ->
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
     inc_counter(pub),
     case Remain > 0 of
-        true -> _ = erlang:send_after(Remain, self(), publish);
-        false -> self() ! publish
+        true -> _ = erlang:send_after(Remain, LoopPid, publish);
+        false -> LoopPid ! publish
     end,
     ok.
 
@@ -1006,6 +1016,7 @@ loop_opts(Opts) ->
                                          , seq
                                          , publish_signal_mref
                                          , pub_start_wait
+                                         , loop_pid
                                          ])
                  end, Opts).
 
