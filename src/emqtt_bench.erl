@@ -21,7 +21,7 @@
 -export([ main/1
         , main/2
         , start/2
-        , run/4
+        , run/5
         , connect/4
         , loop/5
         ]).
@@ -286,13 +286,10 @@ main(conn, Opts) ->
 start(PubSub, Opts) ->
     prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
+    Host = proplists:get_value(host, Opts),
     Rate = proplists:get_value(conn_rate, Opts),
-    AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
-                    false ->
-                        [IfAddr];
-                    true ->
-                       string:tokens(IfAddr, ",")
-                end,
+    HostList = addr_to_list(Host),
+    AddrList = addr_to_list(IfAddr),
     NoAddrs = length(AddrList),
     NoWorkers = max(erlang:system_info(schedulers_online), ceil(Rate / 1000)),
     Count = proplists:get_value(count, Opts),
@@ -319,7 +316,7 @@ start(PubSub, Opts) ->
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
-                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList])
+                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
     main_loop(erlang:monotonic_time(millisecond), _Count = 0).
@@ -461,11 +458,11 @@ inc_counter(connect_fail) ->
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
 
-run(Parent, PubSub, Opts, AddrList) ->
-    run(Parent, proplists:get_value(count, Opts), PubSub, Opts, AddrList).
+run(Parent, PubSub, Opts, AddrList, HostList) ->
+    run(Parent, proplists:get_value(count, Opts), PubSub, Opts, AddrList, HostList).
 
 
-run(_Parent, 0, _PubSub, Opts, _AddrList) ->
+run(_Parent, 0, _PubSub, Opts, _AddrList, _HostList) ->
     case proplists:get_value(publish_signal_pid, Opts) of
         Pid when is_pid(Pid) ->
             Pid ! go;
@@ -473,20 +470,22 @@ run(_Parent, 0, _PubSub, Opts, _AddrList) ->
             ok
     end,
     done;
-run(Parent, N, PubSub, Opts0, AddrList) ->
+run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
                         [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
                     false ->
                         []
                 end,
-    AddrPoolOffset = N rem length(AddrList),
-    Opts = replace_opts(Opts0, [{ifaddr, lists:nth(AddrPoolOffset + 1, AddrList)}]),
+
+    Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
+                               , {host, shard_addr(N, HostList)}
+                               ]),
 
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
              SpawnOpts),
 	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts, AddrList).
+	run(Parent, N-1, PubSub, Opts, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
@@ -887,3 +886,17 @@ random_pub_wait_period(Opts) ->
         Period when Period =< 0 -> MinRandomPubWaitMS;
         Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
     end.
+
+-spec addr_to_list(string()) -> [Ipstr::string()].
+addr_to_list(Input) ->
+    case Input =/= undefined andalso lists:member($,, Input) of
+        false ->
+            [Input];
+        true ->
+            string:tokens(Input, ",")
+    end.
+
+-spec shard_addr(non_neg_integer(), [Ipstr::string()]) -> Ipstr::string().
+shard_addr(N, AddrList) ->
+    Offset = N rem length(AddrList),
+    lists:nth(Offset + 1, AddrList).
