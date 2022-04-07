@@ -887,7 +887,7 @@ random_pub_wait_period(Opts) ->
         Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
     end.
 
--spec addr_to_list(string()) -> [Ipstr::string()].
+-spec addr_to_list(string() | undefined) -> [Ipstr::string() | undefined].
 addr_to_list(Input) ->
     case Input =/= undefined andalso lists:member($,, Input) of
         false ->
