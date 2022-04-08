@@ -382,8 +382,9 @@ print_stats(Uptime, Name) ->
             Now = erlang:monotonic_time(millisecond),
             Elapsed = Now - LastTS,
             Tdiff = fmt_tdiff(Now - Uptime),
-            print("~s ~s total=~w rate=~.2f/sec~n",
-                  [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]),
+            Elapsed =/= 0 andalso
+                print("~s ~s total=~w rate=~.2f/sec~n",
+                      [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]),
             put({stats, Name}, {Now, CurVal});
         true -> ok
     end.
