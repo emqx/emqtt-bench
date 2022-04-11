@@ -95,7 +95,11 @@
           "starting to publish (uniform distribution)"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
-         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(SUB_OPTS,
@@ -146,7 +150,11 @@
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
-         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(CONN_OPTS, [
@@ -191,7 +199,11 @@
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
-         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"},
+         {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
+          "interval in milliseconds in which a major GC will be forced on the "
+          "bench processes.  a value of 0 means disabled (default).  this only "
+          "takes effect when used together with --lowmem."}
         ]).
 
 -define(COUNTERS, 16).
@@ -319,6 +331,7 @@ start(PubSub, Opts) ->
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
+    maybe_spawn_gc_enforcer(Opts),
     main_loop(erlang:monotonic_time(millisecond), _Count = 0).
 
 prepare(PubSub, Opts) ->
@@ -360,6 +373,7 @@ main_loop(Uptime, Count0) ->
             return_print("publish complete", []);
         stats ->
             print_stats(Uptime),
+            garbage_collect(),
             main_loop(Uptime, Count0);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
@@ -474,7 +488,10 @@ run(_Parent, 0, _PubSub, Opts, _AddrList, _HostList) ->
 run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
     SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
-                        [{min_heap_size, 16}, {min_bin_vheap_size, 16}];
+                        [ {min_heap_size, 16}
+                        , {min_bin_vheap_size, 16}
+                        , {fullsweep_after, 1_000}
+                        ];
                     false ->
                         []
                 end,
@@ -484,9 +501,9 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                                ]),
 
     spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
-             SpawnOpts),
-	timer:sleep(proplists:get_value(interval, Opts)),
-	run(Parent, N-1, PubSub, Opts, AddrList, HostList).
+              SpawnOpts),
+    timer:sleep(proplists:get_value(interval, Opts)),
+    run(Parent, N-1, PubSub, Opts, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
@@ -898,6 +915,26 @@ random_pub_wait_period(Opts) ->
     case MaxRandomPubWaitMS - MinRandomPubWaitMS of
         Period when Period =< 0 -> MinRandomPubWaitMS;
         Period -> MinRandomPubWaitMS - 1 + rand:uniform(Period)
+    end.
+
+maybe_spawn_gc_enforcer(Opts) ->
+    LowMemMode = proplists:get_bool(lowmem, Opts),
+    ForceMajorGCInterval = proplists:get_value(force_major_gc_interval, Opts, 0),
+    case {LowMemMode, ForceMajorGCInterval} of
+        {false, _} ->
+            ignore;
+        {true, 0} ->
+            ignore;
+        {true, Interval} when Interval > 0 ->
+            spawn(fun MajorGC () ->
+                          timer:sleep(Interval),
+                          lists:foreach(
+                            fun(P) -> erlang:garbage_collect(P, [{type, major}]) end,
+                            processes()),
+                          MajorGC()
+                  end);
+        {true, _} ->
+            ignore
     end.
 
 -spec addr_to_list(string() | undefined) -> [Ipstr::string() | undefined].
