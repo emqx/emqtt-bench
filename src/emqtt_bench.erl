@@ -550,7 +550,7 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
     case Retries >= MaxRetries of
         true ->
             inc_counter(connect_fail),
-            PubSub =:= sub andalso inc_counter(sub_faill),
+            PubSub =:= sub andalso inc_counter(sub_fail),
             ContinueFn();
         false ->
             io:format("client(~w): retrying...~n", [N]),
