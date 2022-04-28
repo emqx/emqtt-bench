@@ -490,7 +490,7 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                     true ->
                         [ {min_heap_size, 16}
                         , {min_bin_vheap_size, 16}
-                        , {fullsweep_after, 1_000}
+                        , {fullsweep_after, 1000}
                         ];
                     false ->
                         []
