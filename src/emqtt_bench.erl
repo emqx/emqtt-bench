@@ -21,7 +21,7 @@
 -export([ main/1
         , main/2
         , start/2
-        , run/3
+        , run/5
         , connect/4
         , loop/5
         ]).
@@ -32,7 +32,7 @@
          {dist, $d, "dist", boolean,
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
-          "mqtt server hostname or IP address"},
+          "mqtt server hostname or comma-separated hostnames"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -98,7 +98,8 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(SUB_OPTS,
@@ -107,7 +108,7 @@
          {dist, $d, "dist", boolean,
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
-          "mqtt server hostname or IP address"},
+          "mqtt server hostname or comma-separated hostnames"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -152,7 +153,8 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(CONN_OPTS, [
@@ -161,7 +163,7 @@
          {dist, $d, "dist", boolean,
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
-          "mqtt server hostname or IP address"},
+          "mqtt server hostname or comma-separated hostnames"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -200,7 +202,8 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"}
         ]).
 
 -define(COUNTERS, 16).
@@ -211,6 +214,8 @@
 -define(IDX_PUB_FAIL, 6).
 -define(IDX_PUB_OVERRUN, 7).
 -define(IDX_PUB_SUCCESS, 8).
+-define(IDX_CONN_SUCCESS, 9).
+-define(IDX_CONN_FAIL, 10).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -293,17 +298,25 @@ main(conn, Opts) ->
 start(PubSub, Opts) ->
     prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
-    AddrList = case IfAddr =/= undefined andalso lists:member($,, IfAddr) of
-                    false ->
-                        [IfAddr];
-                    true ->
-                       string:tokens(IfAddr, ",")
-                end,
-    NoWorkers = length(AddrList),
+    Host = proplists:get_value(host, Opts),
+    Rate = proplists:get_value(conn_rate, Opts),
+    HostList = addr_to_list(Host),
+    AddrList = addr_to_list(IfAddr),
+    NoAddrs = length(AddrList),
+    NoWorkers = max(erlang:system_info(schedulers_online), ceil(Rate / 1000)),
     Count = proplists:get_value(count, Opts),
     CntPerWorker = Count div NoWorkers,
     Rem = Count rem NoWorkers,
-    Interval = proplists:get_value(interval, Opts) * NoWorkers,
+    Interval = case Rate of
+                   0 -> %% conn_rate is not set
+                       proplists:get_value(interval, Opts) * NoWorkers;
+                   ConnRate ->
+                       1000 * NoWorkers div ConnRate
+               end,
+
+    io:format("Start with ~p workers, addrs pool size: ~p and req interval: ~p ms ~n~n",
+              [NoWorkers, NoAddrs, Interval]),
+    true = (Interval >= 1),
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
                           CountParm = case Rem =/= 0 andalso P == 1 of
@@ -313,14 +326,13 @@ start(PubSub, Opts) ->
                                               [{count, CntPerWorker}]
                                       end,
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
-                                                      {ifaddr, lists:nth(P, AddrList)},
                                                       {interval, Interval}
                                                      ] ++ CountParm),
-                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts])
+                          proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
     maybe_spawn_gc_enforcer(Opts),
-    main_loop(os:timestamp(), _Count = 0).
+    main_loop(erlang:monotonic_time(millisecond), _Count = 0).
 
 prepare(PubSub, Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p-~p", [?MODULE, PubSub, rand:uniform(1000)]))),
@@ -342,23 +354,23 @@ init() ->
     process_flag(trap_exit, true),
     CRef = counters:new(?COUNTERS, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
-    put({stats, recv}, 0),
-    put({stats, pub}, 0),
-    put({stats, pub_succ}, 0),
-    put({stats, pub_fail}, 0),
-    put({stats, pub_overrun}, 0),
-    put({stats, sub_fail}, 0),
-    put({stats, sub}, 0).
+    Now = erlang:monotonic_time(millisecond),
+    InitS = {Now, 0},
+    put({stats, recv}, InitS),
+    put({stats, pub}, InitS),
+    put({stats, pub_succ}, InitS),
+    put({stats, pub_fail}, InitS),
+    put({stats, pub_overrun}, InitS),
+    put({stats, sub_fail}, InitS),
+    put({stats, sub}, InitS),
+    put({stats, connect_succ}, InitS),
+    put({stats, connect_fail}, InitS).
 
 
 main_loop(Uptime, Count0) ->
     receive
         publish_complete ->
             return_print("publish complete", []);
-        {connected, _N, _Client} ->
-            Count = Count0 + 1,
-            return_print("connected: ~w", [Count]),
-            main_loop(Uptime, Count);
         stats ->
             print_stats(Uptime),
             garbage_collect(),
@@ -370,22 +382,23 @@ main_loop(Uptime, Count0) ->
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun]],
+        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun, connect_succ, connect_fail]],
     ok.
 
 print_stats(Uptime, Name) ->
     CurVal = get_counter(Name),
-    LastVal = get({stats, Name}),
+    {LastTS, LastVal} = get({stats, Name}),
     case CurVal == LastVal of
         false ->
-            Tdiff = fmt_tdiff(timer:now_diff(os:timestamp(), Uptime) div 1000),
-            print("~s ~s total=~w rate=~w/sec~n",
-                  [Tdiff, Name, CurVal, CurVal - LastVal]),
-            put({stats, Name}, CurVal);
+            Now = erlang:monotonic_time(millisecond),
+            Elapsed = Now - LastTS,
+            Tdiff = fmt_tdiff(Now - Uptime),
+            print("~s ~s total=~w rate=~.2f/sec~n",
+                  [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]),
+            put({stats, Name}, {Now, CurVal});
         true -> ok
     end.
 
-fmt_tdiff(D) when D < 1000 -> [integer_to_list(D), "ms"];
 fmt_tdiff(D) -> do_fmt_tdiff(D div 1000).
 
 do_fmt_tdiff(S) ->
@@ -431,7 +444,11 @@ get_counter(sub_fail) ->
 get_counter(pub_fail) ->
     counters:get(cnt_ref(), ?IDX_PUB_FAIL);
 get_counter(pub_overrun) ->
-    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN).
+    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN);
+get_counter(connect_succ) ->
+    counters:get(cnt_ref(), ?IDX_CONN_SUCCESS);
+get_counter(connect_fail) ->
+    counters:get(cnt_ref(), ?IDX_CONN_FAIL).
 
 inc_counter(recv) ->
     counters:add(cnt_ref(), ?IDX_RECV, 1);
@@ -446,15 +463,20 @@ inc_counter(pub_succ) ->
 inc_counter(pub_fail) ->
     counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
 inc_counter(pub_overrun) ->
-    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1).
+    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1);
+inc_counter(connect_succ) ->
+    counters:add(cnt_ref(), ?IDX_CONN_SUCCESS, 1);
+inc_counter(connect_fail) ->
+    counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
 
-run(Parent, PubSub, Opts) ->
-    run(Parent, proplists:get_value(count, Opts), PubSub, Opts).
+run(Parent, PubSub, Opts, AddrList, HostList) ->
+    run(Parent, proplists:get_value(count, Opts), PubSub, Opts, AddrList, HostList).
 
-run(_Parent, 0, _PubSub, Opts) ->
+
+run(_Parent, 0, _PubSub, Opts, _AddrList, _HostList) ->
     case proplists:get_value(publish_signal_pid, Opts) of
         Pid when is_pid(Pid) ->
             Pid ! go;
@@ -462,8 +484,8 @@ run(_Parent, 0, _PubSub, Opts) ->
             ok
     end,
     done;
-run(Parent, N, PubSub, Opts) ->
-    SpawnOpts = case proplists:get_bool(lowmem, Opts) of
+run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
+    SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
                         [ {min_heap_size, 16}
                         , {min_bin_vheap_size, 16}
@@ -474,15 +496,18 @@ run(Parent, N, PubSub, Opts) ->
                 end,
     case PubSub of
         pub ->
-            connect_pub(Parent, N, queue:new(), Opts);
+            connect_pub(Parent, N, queue:new(), Opts0, AddrList, HostList);
         _ ->
+            Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
+                                       , {host, shard_addr(N, HostList)}
+                                       ]),
             spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
                       SpawnOpts),
             timer:sleep(proplists:get_value(interval, Opts)),
-            run(Parent, N-1, PubSub, Opts)
+            run(Parent, N-1, PubSub, Opts, AddrList, HostList)
     end.
 
-connect_pub(Parent, 0, Clients, Opts) ->
+connect_pub(Parent, 0, Clients, Opts, _AddrList, _HostList) ->
     StartNum = proplists:get_value(startnumber, Opts),
     case proplists:get_value(publish_signal_pid, Opts) of
         Pid when is_pid(Pid) ->
@@ -498,8 +523,11 @@ connect_pub(Parent, 0, Clients, Opts) ->
                , {loop_pid, self()}
                | Opts],
     loop_pub(Parent, Clients, loop_opts(AllOpts));
-connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
+connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     process_flag(trap_exit, true),
+    Opts0 = replace_opts(Opts00, [ {ifaddr, shard_addr(N, AddrList)}
+                                 , {host, shard_addr(N, HostList)}
+                                 ]),
     StartNum = proplists:get_value(startnumber, Opts0),
     rand:seed(exsplus, erlang:timestamp()),
     MRef = case {proplists:get_value(publish_signal_mref, Opts0),
@@ -529,7 +557,6 @@ connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
               end,
     case ConnRet of
         {ok, _Props} ->
-            Parent ! {connected, N, Client},
             case MRef of
                 undefined ->
                     erlang:send_after(RandomPubWaitMS, self(), publish);
@@ -539,18 +566,20 @@ connect_pub(Parent, N, Clients0, Opts0) when N > 0 ->
                     ok
             end,
             timer:sleep(proplists:get_value(interval, Opts)),
-            connect_pub(Parent, N - 1, queue:in_r(Client, Clients), proplists:delete(connection_attempts, Opts));
+            inc_counter(connect_succ),
+            connect_pub(Parent, N - 1, queue:in_r(Client, Clients), proplists:delete(connection_attempts, Opts), AddrList, HostList);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
             Retries = proplists:get_value(connection_attempts, Opts, 0),
             case Retries >= MaxRetries of
                 true ->
-                    connect_pub(Parent, N - 1, Clients, proplists:delete(connection_attempts, Opts));
+                    inc_counter(connect_fail),
+                    connect_pub(Parent, N - 1, Clients, proplists:delete(connection_attempts, Opts), AddrList, HostList);
                 false ->
                     io:format("client(~w): retrying...~n", [N]),
                     NOpts = proplists:delete(connection_attempts, Opts),
-                    connect_pub(Parent, N, Clients, [{connection_attempts, Retries + 1} | NOpts])
+                    connect_pub(Parent, N, Clients, [{connection_attempts, Retries + 1} | NOpts], AddrList, HostList)
             end
     end.
 
@@ -610,7 +639,6 @@ connect(Parent, N, PubSub, Opts) ->
     ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
     case ConnRet of
         {ok, _Props} ->
-            Parent ! {connected, N, Client},
             Res =
                 case PubSub of
                     conn -> ok;
@@ -628,6 +656,8 @@ connect(Parent, N, PubSub, Opts) ->
                 {error, _SubscribeError} ->
                     maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
                 _ ->
+                    inc_counter(connect_succ),
+                    PubSub =:= sub andalso inc_counter(sub),
                     loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
             end;
         {error, Error} ->
@@ -640,6 +670,8 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
     Retries = proplists:get_value(connection_attempts, Opts, 0),
     case Retries >= MaxRetries of
         true ->
+            inc_counter(connect_fail),
+            PubSub =:= sub andalso inc_counter(sub_fail),
             ContinueFn();
         false ->
             io:format("client(~w): retrying...~n", [N]),
@@ -801,9 +833,8 @@ subscribe(Client, N, Opts) ->
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
     case Res of
         {ok, _, _} ->
-            inc_counter(sub);
+            ok;
         {error, Reason} ->
-            inc_counter(sub_fail),
             io:format("client(~w): subscribe error - ~p~n", [N, Reason]),
             emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
     end,
@@ -1079,3 +1110,17 @@ maybe_spawn_gc_enforcer(Opts) ->
         {true, _} ->
             ignore
     end.
+
+-spec addr_to_list(string() | undefined) -> [Ipstr::string() | undefined].
+addr_to_list(Input) ->
+    case Input =/= undefined andalso lists:member($,, Input) of
+        false ->
+            [Input];
+        true ->
+            string:tokens(Input, ",")
+    end.
+
+-spec shard_addr(non_neg_integer(), [Ipstr::string()]) -> Ipstr::string().
+shard_addr(N, AddrList) ->
+    Offset = N rem length(AddrList),
+    lists:nth(Offset + 1, AddrList).

@@ -42,7 +42,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
                         [-l <lowmem>]
 
   --help                help information
-  -h, --host            mqtt server hostname or IP address [default:
+  -h, --host            mqtt server hostname or comma-separated hostnames [default:
                         localhost]
   -p, --port            mqtt server port number [default: 1883]
   -V, --version         mqtt protocol version: 3 | 4 | 5 [default: 5]
@@ -89,7 +89,7 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [-l <lowmem>]
 
   --help                help information
-  -h, --host            mqtt server hostname or IP address [default:
+  -h, --host            mqtt server hostname or comma-separated hostnames [default:
                         localhost]
   -p, --port            mqtt server port number [default: 1883]
   -V, --version         mqtt protocol version: 3 | 4 | 5 [default: 5]
@@ -140,7 +140,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
                        [--prefix <prefix>] [-l <lowmem>]
 
   --help                 help information
-  -h, --host             mqtt server hostname or IP address [default:
+  -h, --host            mqtt server hostname or comma-separated hostnames [default:
                          localhost]
   -p, --port             mqtt server port number [default: 1883]
   -V, --version          mqtt protocol version: 3 | 4 | 5 [default: 5]
