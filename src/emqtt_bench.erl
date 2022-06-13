@@ -99,7 +99,12 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {log_to, undefined, "log_to", {atom, console},
+          "Control where the log output goes. "
+          "console: directly to the console      "
+          "null: quietly, don't output any logs."
+         }
         ]).
 
 -define(SUB_OPTS,
@@ -154,7 +159,12 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {log_to, undefined, "log_to", {atom, console},
+          "Control where the log output goes. "
+          "console: directly to the console      "
+          "null: quietly, don't output any logs."
+         }
         ]).
 
 -define(CONN_OPTS, [
@@ -203,7 +213,12 @@
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
           "interval in milliseconds in which a major GC will be forced on the "
           "bench processes.  a value of 0 means disabled (default).  this only "
-          "takes effect when used together with --lowmem."}
+          "takes effect when used together with --lowmem."},
+         {log_to, undefined, "log_to", {atom, console},
+          "Control where the log output goes. "
+          "console: directly to the console      "
+          "null: quietly, don't output any logs."
+         }
         ]).
 
 -define(COUNTERS, 16).
@@ -486,6 +501,7 @@ run(_Parent, 0, _PubSub, Opts, _AddrList, _HostList) ->
     end,
     done;
 run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
+    emqtt_logger:setup(Opts0),
     SpawnOpts = case proplists:get_bool(lowmem, Opts0) of
                     true ->
                         [ {min_heap_size, 16}
