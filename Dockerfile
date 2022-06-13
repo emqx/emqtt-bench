@@ -1,4 +1,4 @@
-ARG FROM=ghcr.io/emqx/emqx-builder-helper/5.0:24.0.5-emqx-1-alpine3.14
+ARG FROM=ghcr.io/emqx/emqx-builder/5.0-16:1.13.4-24.2.1-1-alpine3.15.1
 FROM ${FROM}
 COPY . /emqtt_bench
 WORKDIR /emqtt_bench

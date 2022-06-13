@@ -14,7 +14,7 @@ jobs:
         otp:
           - "24.2.1-1"
         elixir:
-          - "1.13.3"
+          - "1.13.4"
     steps:
       - uses: actions/checkout@v2
       - uses: docker/setup-qemu-action@v1
@@ -42,7 +42,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.0-7:${{ matrix.elixir }}-${{ matrix.otp }}-alpine3.14
+            FROM=ghcr.io/emqx/emqx-builder/5.0-16:${{ matrix.elixir }}-${{ matrix.otp }}-alpine3.15.1
 
   package:
     runs-on: ubuntu-latest
