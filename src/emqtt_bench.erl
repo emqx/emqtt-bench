@@ -49,7 +49,7 @@
          {password, $P, "password", string,
           "password for connecting to server"},
          {topic, $t, "topic", string,
-          "topic subscribe, support %u, %c, %i variables"},
+          "topic subscribe, support %u, %c, %i, %s variables"},
          {size, $s, "size", {integer, 256},
           "payload size"},
          {message, $m, "message", string,
@@ -832,8 +832,9 @@ topic_opt(Opts) ->
     feed_var(bin(proplists:get_value(topic, Opts)), Opts).
 
 feed_var(Topic, Opts) when is_binary(Topic) ->
-    Props = [{Var, bin(proplists:get_value(Key, Opts))} || {Key, Var} <-
+    PropsT = [{Var, bin(proplists:get_value(Key, Opts))} || {Key, Var} <-
                 [{seq, <<"%i">>}, {client_id, <<"%c">>}, {username, <<"%u">>}]],
+    Props = [{<<"%s">>, bin(get_counter(pub) + 1)} | PropsT],
     lists:foldl(fun({_Var, undefined}, Acc) -> Acc;
                    ({Var, Val}, Acc) -> feed_var(Var, Val, Acc)
                 end, Topic, Props).
