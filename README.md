@@ -2,9 +2,15 @@
 
 `emqtt_bench` is a simple MQTT v5.0 benchmark tool written in Erlang.
 
-Requires Erlang/OTP 22.3+ to build.
+You can download pre-built binary packeges from https://github.com/emqx/emqtt-bench/releases.
 
-Requires libatomic 
+## Build from source code
+
+NOTE: Requires **Erlang/OTP 22.3+** to build.
+
+### Install dependencies
+
+emqtt-bench requires `libatomic`
 
 ``` sh
 # centos 7
@@ -16,9 +22,11 @@ sudo yum install libatomic
 sudo apt install libatomic1 
 ```
 
-## Build first
+### make
 
 ```sh
+git clone https://github.com/emqx/emqtt-bench.git
+cd emqtt-bench
 make
 ```
 
