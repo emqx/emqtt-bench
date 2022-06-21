@@ -311,15 +311,7 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
-    ets:new(quic_clients_nsts, [named_table, public, ordered_set]),
     ets:new(qoe_store, [named_table, public, ordered_set]),
-    case proplists:get_value(nst_dets_file, Opts, undefined) of
-       undefined ->
-          {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, "/tmp/quic_clients_nsts.dets"}]);
-       Filename ->
-          {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, Filename}]),
-          ets:from_dets(quic_clients_nsts, dets_quic_nsts)
-    end,
     prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
     Host = proplists:get_value(host, Opts),
@@ -368,7 +360,9 @@ prepare(PubSub, Opts) ->
             ok
     end,
     case proplists:get_bool(quic, Opts) of
-        true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
+        true ->
+          maybe_start_quicer() orelse error({quic, not_supp_or_disabled}),
+          prepare_for_quic(Opts);
         _ ->
             ok
     end,
@@ -398,12 +392,18 @@ main_loop(Uptime, Count) ->
         stats ->
             print_stats(Uptime),
             maybe_print_qoe(Count),
+            maybe_dump_nst_dets(Count),
             garbage_collect(),
             main_loop(Uptime, Count);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
             main_loop(Uptime, Count)
     end.
+
+maybe_dump_nst_dets(Count)->
+    Count == ets:info(quic_clients_nsts, size)
+      andalso undefined =/= dets:info(dets_quic_nsts)
+      andalso ets:to_dets(quic_clients_nsts, dets_quic_nsts).
 
 maybe_print_qoe(Count) ->
    %% latency statistic for
@@ -421,7 +421,8 @@ do_print_qoe([]) ->
 do_print_qoe(Data) ->
    {H, C, S} = lists:unzip3([ V || {_C, V} <-Data]),
    lists:foreach(
-     fun({Name, X}) ->
+     fun({_Name, 0})-> skip;
+        ({Name, X}) ->
            io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
                      [Name, lists:sum(X)/length(X), p95(X), lists:max(X)])
      end, [{handshake, H}, {connect, C}, {subscribe, S}]),
@@ -1063,5 +1064,21 @@ p95(List)->
    percentile(List, 0.95).
 percentile(Input, P) ->
    Len = length(Input),
-   Pos = trunc(Len * P),
+   Pos = ceil(Len * P),
    lists:nth(Pos, lists:sort(Input)).
+
+-spec prepare_for_quic(proplists:proplist()) -> ok | skip.
+prepare_for_quic(Opts)->
+   %% Create ets table for 0-RTT session tickets
+   ets:new(quic_clients_nsts, [named_table, public, ordered_set,
+                               {write_concurrency, true},
+                               {read_concurrency,true}]),
+   %% Load session tickets from dets file if specified.
+   case proplists:get_value(nst_dets_file, Opts, undefined) of
+      undefined ->
+         skip;
+      Filename ->
+         {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, Filename}]),
+         true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
+         ok
+   end.
