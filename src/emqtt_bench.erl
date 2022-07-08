@@ -866,7 +866,11 @@ mqtt_opts(Opts) ->
     WorkerPid = self(),
     Handler = #{ publish => fun(_) -> WorkerPid ! published end
                , puback => fun(_) -> WorkerPid ! puback end
-               , disconnected => fun({ReasonCode, _}) -> WorkerPid ! {disconnected, ReasonCode, #{}} end
+               , disconnected => fun({ReasonCode, _}) ->
+                                      WorkerPid ! {disconnected, ReasonCode, #{}};
+                                    (_Reason) ->
+                                      WorkerPid ! {disconnected, 16#80, #{}}
+                                 end
                },
     mqtt_opts(Opts, [{msg_handler, Handler}]).
 
