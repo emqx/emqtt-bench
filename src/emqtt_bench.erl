@@ -549,7 +549,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     Clients = Clients0#{Client => true},
-    maybe_publish(Parent, Client, Opts),
+    maybe_publish(Parent, Clients, Opts),
     case ConnRet of
         {ok, _Props} ->
             case MRef of
@@ -579,26 +579,31 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     end.
 
 %% to avoid massive hit when everyone connects
-maybe_publish(Parent, Client, Opts) ->
+maybe_publish(Parent, Clients, Opts) ->
     receive
         {publish, Client} ->
-            spawn(
-              fun() ->
-                      case (proplists:get_value(limit_fun, Opts))() of
-                          true ->
-                              %% this call hangs if emqtt inflight is full
-                              case publish(Client, Opts) of
-                                  ok -> next_publish_pub(Client, Opts);
-                                  {ok, _} -> next_publish_pub(Client, Opts);
-                                  {error, Reason} ->
-                                      inc_counter(pub_fail),
-                                      io:format("client: publish error - ~p~n", [Reason])
-                              end;
-                          _ ->
-                              Parent ! publish_complete,
-                              exit(normal)
-                      end
-              end)
+            case Clients of
+                #{Client := true} ->
+                    spawn(
+                      fun() ->
+                              case (proplists:get_value(limit_fun, Opts))() of
+                                  true ->
+                                      %% this call hangs if emqtt inflight is full
+                                      case publish(Client, Opts) of
+                                          ok -> next_publish_pub(Client, Opts);
+                                          {ok, _} -> next_publish_pub(Client, Opts);
+                                          {error, Reason} ->
+                                              inc_counter(pub_fail),
+                                              io:format("client: publish error - ~p~n", [Reason])
+                                      end;
+                                  _ ->
+                                      Parent ! publish_complete,
+                                      exit(normal)
+                              end
+                      end);
+                _ ->
+                    ok
+            end
     after
         0 ->
             ok
