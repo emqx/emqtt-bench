@@ -385,7 +385,7 @@ init() ->
 main_loop(Uptime, Count0) ->
     receive
         publish_complete ->
-            return_print("publish complete", []);
+            return_print("publish complete~n", []);
         stats ->
             print_stats(Uptime),
             garbage_collect(),
