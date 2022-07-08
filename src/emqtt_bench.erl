@@ -645,25 +645,18 @@ loop(Parent, N, Client, PubSub, Opts) ->
 	end.
 
 put_publish_begin_time() ->
-    case get(last_publish_ts) of
-        undefined ->
-            NowT = erlang:monotonic_time(millisecond),
-            put(last_publish_ts, NowT);
-        _ ->
-            ok
-    end,
+    NowT = erlang:monotonic_time(millisecond),
+    put(last_publish_ts, NowT),
     ok.
 
 next_publish(Opts) ->
-    inc_counter(pub),
-    BeginTime = get(last_publish_ts),
-    PubCnt = get_counter(pub),
     Interval = proplists:get_value(interval_of_msg, Opts),
-    NextTime = BeginTime + PubCnt * Interval,
+    LastT = get(last_publish_ts),
     NowT = erlang:monotonic_time(millisecond),
-    Remain = NextTime - NowT,
+    Spent = NowT - LastT,
+    Remain = Interval - Spent,
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
-
+    inc_counter(pub),
     case Remain > 0 of
         true -> _ = erlang:send_after(Remain, self(), publish);
         false -> self() ! publish
