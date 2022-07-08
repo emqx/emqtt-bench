@@ -496,7 +496,7 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                 end,
     case PubSub of
         pub ->
-            connect_pub(Parent, N, queue:new(), Opts0, AddrList, HostList);
+            connect_pub(Parent, N, #{}, Opts0, AddrList, HostList);
         _ ->
             Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
                                        , {host, shard_addr(N, HostList)}
@@ -548,18 +548,13 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
-    Clients = case queue:is_empty(Clients0) of
-                  true -> Clients0;
-                  false ->
-                      {{value, Client1}, NClients} = queue:out(Clients0),
-                      maybe_publish(Parent, Client1, Opts),
-                      queue:in_r(Client1, NClients)
-              end,
+    Clients = Clients0#{Client => true},
+    maybe_publish(Parent, Client, Opts),
     case ConnRet of
         {ok, _Props} ->
             case MRef of
                 undefined ->
-                    erlang:send_after(RandomPubWaitMS, self(), publish);
+                    erlang:send_after(RandomPubWaitMS, self(), {publish, Client});
                 _ ->
                     %% send `publish' only when all publishers
                     %% are in place.
@@ -567,7 +562,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
             end,
             timer:sleep(proplists:get_value(interval, Opts)),
             inc_counter(connect_succ),
-            connect_pub(Parent, N - 1, queue:in_r(Client, Clients), proplists:delete(connection_attempts, Opts), AddrList, HostList);
+            connect_pub(Parent, N - 1, Clients, proplists:delete(connection_attempts, Opts), AddrList, HostList);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
@@ -575,26 +570,26 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
             case Retries >= MaxRetries of
                 true ->
                     inc_counter(connect_fail),
-                    connect_pub(Parent, N - 1, Clients, proplists:delete(connection_attempts, Opts), AddrList, HostList);
+                    connect_pub(Parent, N - 1, Clients0, proplists:delete(connection_attempts, Opts), AddrList, HostList);
                 false ->
                     io:format("client(~w): retrying...~n", [N]),
                     NOpts = proplists:delete(connection_attempts, Opts),
-                    connect_pub(Parent, N, Clients, [{connection_attempts, Retries + 1} | NOpts], AddrList, HostList)
+                    connect_pub(Parent, N, Clients0, [{connection_attempts, Retries + 1} | NOpts], AddrList, HostList)
             end
     end.
 
 %% to avoid massive hit when everyone connects
 maybe_publish(Parent, Client, Opts) ->
     receive
-        publish ->
+        {publish, Client} ->
             spawn(
               fun() ->
                       case (proplists:get_value(limit_fun, Opts))() of
                           true ->
                               %% this call hangs if emqtt inflight is full
                               case publish(Client, Opts) of
-                                  ok -> next_publish(Opts);
-                                  {ok, _} -> next_publish(Opts);
+                                  ok -> next_publish_pub(Client, Opts);
+                                  {ok, _} -> next_publish_pub(Client, Opts);
                                   {error, Reason} ->
                                       inc_counter(pub_fail),
                                       io:format("client: publish error - ~p~n", [Reason])
@@ -686,28 +681,27 @@ loop_pub(Parent, Clients, Opts) ->
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
-            NumClients = queue:len(Clients),
-            lists:foreach(fun(_) ->
-                                  erlang:send_after(RandomPubWaitMS, LoopPid, publish)
+            NumClients = maps:size(Clients),
+            lists:foreach(fun(C) ->
+                                  erlang:send_after(RandomPubWaitMS, LoopPid, {publish, C})
                           end,
-                         lists:seq(1, NumClients)),
+                         maps:keys(NumClients)),
             loop_pub(Parent, Clients, Opts);
-        publish ->
+        {publish, ClientPID} ->
             case (proplists:get_value(limit_fun, Opts))() of
                 true ->
-                    {{value, Client}, NClients} = queue:out(Clients),
                     spawn(
                       fun() ->
                               %% this call hangs if emqtt inflight is full
-                              case publish(Client, Opts) of
-                                  ok -> next_publish(Opts);
-                                  {ok, _} -> next_publish(Opts);
+                              case publish(ClientPID, Opts) of
+                                  ok -> next_publish_pub(ClientPID, Opts);
+                                  {ok, _} -> next_publish_pub(ClientPID, Opts);
                                   {error, Reason} ->
                                       inc_counter(pub_fail),
                                       io:format("client: publish error - ~p~n", [Reason])
                               end
                       end),
-                    loop_pub(Parent, queue:in_r(Client, NClients), Opts);
+                    loop_pub(Parent, Clients, Opts);
                 _ ->
                     Parent ! publish_complete,
                     exit(normal)
@@ -733,7 +727,7 @@ loop_pub(Parent, Clients, Opts) ->
         Idle ->
             case proplists:get_bool(lowmem, Opts) of
                 true ->
-                    LClients = queue:to_list(Clients),
+                    LClients = maps:keys(Clients),
                     lists:foreach(fun(C) -> garbage_collect(C, [{type, major}]) end, LClients),
                     erlang:garbage_collect(self(), [{type, major}]);
                 false ->
@@ -812,6 +806,21 @@ next_publish(Opts) ->
     case Remain > 0 of
         true -> _ = erlang:send_after(Remain, LoopPid, publish);
         false -> LoopPid ! publish
+    end,
+    ok.
+
+next_publish_pub(Client, Opts) ->
+    LoopPid = proplists:get_value(loop_pid, Opts, self()),
+    Interval = proplists:get_value(interval_of_msg, Opts),
+    LastT = get(last_publish_ts),
+    NowT = erlang:monotonic_time(millisecond),
+    Spent = NowT - LastT,
+    Remain = Interval - Spent,
+    Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
+    inc_counter(pub),
+    case Remain > 0 of
+        true -> _ = erlang:send_after(Remain, LoopPid, {publish, Client});
+        false -> LoopPid ! {publish, Client}
     end,
     ok.
 
