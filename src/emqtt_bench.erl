@@ -654,16 +654,25 @@ put_publish_begin_time() ->
     end,
     ok.
 
+%% @doc return new value
+inc_iner_pub_counter() ->
+    case get(iner_pub_cnt) of
+        undefined ->
+            put(iner_pub_cnt, 1), 1;
+        Val ->
+            put(iner_pub_cnt, Val+1), Val+1
+    end.
+
 next_publish(Opts) ->
-    inc_counter(pub),
     BeginTime = get(last_publish_ts),
-    PubCnt = get_counter(pub),
+    PubCnt = inc_iner_pub_counter(),
     Interval = proplists:get_value(interval_of_msg, Opts),
     NextTime = BeginTime + PubCnt * Interval,
     NowT = erlang:monotonic_time(millisecond),
     Remain = NextTime - NowT,
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
 
+    inc_counter(pub),
     case Remain > 0 of
         true -> _ = erlang:send_after(Remain, self(), publish);
         false -> self() ! publish
