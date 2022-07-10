@@ -592,8 +592,10 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
     end.
 
 loop(Parent, N, Client, PubSub, Opts) ->
-    Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
+    Interval = proplists:get_value(interval_of_msg, Opts, 0),
+    Idle = max(Interval * 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
+    ok = put_publish_begin_time(),
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
@@ -602,11 +604,14 @@ loop(Parent, N, Client, PubSub, Opts) ->
         publish ->
            case (proplists:get_value(limit_fun, Opts))() of
                 true ->
-                   %% this call hangs if emqtt inflight is full
+                    %% this call hangs if emqtt inflight is full
                     case publish(Client, Opts) of
-                        ok -> next_publish(Opts);
-                        {ok, _} -> next_publish(Opts);
+                        ok ->
+                            inc_counter(pub),
+                            ok = schedule_next_publish(Interval),
+                            ok;
                         {error, Reason} ->
+                            %% TODO: schedule next publish for retry ?
                             inc_counter(pub_fail),
                             io:format("client(~w): publish error - ~p~n", [N, Reason])
                     end,
@@ -645,34 +650,31 @@ loop(Parent, N, Client, PubSub, Opts) ->
 	end.
 
 put_publish_begin_time() ->
-    case get(last_publish_ts) of
-        undefined ->
-            NowT = erlang:monotonic_time(millisecond),
-            put(last_publish_ts, NowT);
-        _ ->
-            ok
-    end,
+    NowT = erlang:monotonic_time(millisecond),
+    put(publish_begin_ts, NowT),
     ok.
 
-%% @doc return new value
-inc_iner_pub_counter() ->
-    case get(iner_pub_cnt) of
-        undefined ->
-            put(iner_pub_cnt, 1), 1;
-        Val ->
-            put(iner_pub_cnt, Val+1), Val+1
-    end.
+get_publish_begin_time() ->
+    get(publish_begin_ts).
 
-next_publish(Opts) ->
-    BeginTime = get(last_publish_ts),
-    PubCnt = inc_iner_pub_counter(),
-    Interval = proplists:get_value(interval_of_msg, Opts),
-    NextTime = BeginTime + PubCnt * Interval,
+%% @doc return new value
+bump_publish_attempt_counter() ->
+    NewCount = case get(success_publish_count) of
+                   undefined ->
+                       1;
+                   Val ->
+                       Val + 1
+               end,
+    _ = put(success_publish_count, NewCount),
+    NewCount.
+
+schedule_next_publish(Interval) ->
+    PubAttempted = bump_publish_attempt_counter(),
+    BeginTime = get_publish_begin_time(),
+    NextTime = BeginTime + PubAttempted * Interval,
     NowT = erlang:monotonic_time(millisecond),
     Remain = NextTime - NowT,
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
-
-    inc_counter(pub),
     case Remain > 0 of
         true -> _ = erlang:send_after(Remain, self(), publish);
         false -> self() ! publish
@@ -705,11 +707,14 @@ subscribe(Client, N, Opts) ->
     Res.
 
 publish(Client, Opts) ->
-    ok = put_publish_begin_time(),
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
-    emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
+    case emqtt:publish(Client, topic_opt(Opts), Payload, Flags) of
+        ok -> ok;
+        {ok, _} -> ok;
+        {error, Reason} -> {error, Reason}
+    end.
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
