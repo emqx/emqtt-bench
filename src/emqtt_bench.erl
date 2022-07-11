@@ -606,7 +606,8 @@ maybe_publish(Parent, Clients, Opts) ->
                                       Parent ! publish_complete,
                                       exit(normal)
                               end
-                      end);
+                      end),
+                    maybe_publish(Parent, Clients, Opts);
                 _ ->
                     ok
             end
