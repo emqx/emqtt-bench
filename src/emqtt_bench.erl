@@ -217,6 +217,8 @@
 -define(IDX_CONN_SUCCESS, 9).
 -define(IDX_CONN_FAIL, 10).
 
+-define(PUBLISH(C, S), {publish, C, S}).
+
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
     ok = maybe_help(sub, Opts),
@@ -529,6 +531,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
                                  , {host, shard_addr(N, HostList)}
                                  ]),
     StartNum = proplists:get_value(startnumber, Opts0),
+    Seq = StartNum + N,
     rand:seed(exsplus, erlang:timestamp()),
     MRef = case {proplists:get_value(publish_signal_mref, Opts0),
                  proplists:get_value(publish_signal_pid, Opts0)} of
@@ -537,8 +540,10 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
                    monitor(process, Pid);
                _ -> undefined
            end,
-    Opts = [{publish_signal_mref, MRef} | Opts0],
-    ClientId = client_id(pub, N + StartNum, Opts),
+    Opts = [ {publish_signal_mref, MRef}
+           , {seq, Seq}
+           | Opts0],
+    ClientId = client_id(pub, Seq, Opts),
     MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}]
@@ -549,12 +554,13 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     Clients = Clients0#{Client => true},
-    maybe_publish(Parent, Clients, Opts),
+    maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
+    drain_published_pub(),
     case ConnRet of
         {ok, _Props} ->
             case MRef of
                 undefined ->
-                    erlang:send_after(RandomPubWaitMS, self(), {publish, Client});
+                    erlang:send_after(RandomPubWaitMS, self(), ?PUBLISH(Client, Seq));
                 _ ->
                     %% send `publish' only when all publishers
                     %% are in place.
@@ -581,7 +587,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
 %% to avoid massive hit when everyone connects
 maybe_publish(Parent, Clients, Opts) ->
     receive
-        {publish, Client} ->
+        ?PUBLISH(Client, Seq) ->
             case Clients of
                 #{Client := true} ->
                     spawn(
@@ -589,9 +595,9 @@ maybe_publish(Parent, Clients, Opts) ->
                               case (proplists:get_value(limit_fun, Opts))() of
                                   true ->
                                       %% this call hangs if emqtt inflight is full
-                                      case publish(Client, Opts) of
-                                          ok -> next_publish_pub(Client, Opts);
-                                          {ok, _} -> next_publish_pub(Client, Opts);
+                                      case publish_pub(Client, Seq, Opts) of
+                                          ok -> next_publish_pub(Client, Seq, Opts);
+                                          {ok, _} -> next_publish_pub(Client, Seq, Opts);
                                           {error, Reason} ->
                                               inc_counter(pub_fail),
                                               io:format("client: publish error - ~p~n", [Reason])
@@ -665,6 +671,20 @@ connect(Parent, N, PubSub, Opts) ->
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
     end.
 
+drain_published_pub() ->
+    receive
+        published ->
+            inc_counter(recv),
+            drain_published_pub();
+        puback ->
+            %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
+            inc_counter(pub_succ),
+            drain_published_pub()
+    after
+        0 ->
+            ok
+    end.
+
 maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
     MaxRetries = proplists:get_value(num_retry_connect, Opts, 0),
     Retries = proplists:get_value(connection_attempts, Opts, 0),
@@ -692,15 +712,15 @@ loop_pub(Parent, Clients, Opts) ->
                           end,
                          maps:keys(NumClients)),
             loop_pub(Parent, Clients, Opts);
-        {publish, ClientPID} ->
+        ?PUBLISH(ClientPID, Seq) ->
             case (proplists:get_value(limit_fun, Opts))() of
                 true ->
                     spawn(
                       fun() ->
                               %% this call hangs if emqtt inflight is full
-                              case publish(ClientPID, Opts) of
-                                  ok -> next_publish_pub(ClientPID, Opts);
-                                  {ok, _} -> next_publish_pub(ClientPID, Opts);
+                              case publish_pub(ClientPID, Seq, Opts) of
+                                  ok -> next_publish_pub(ClientPID, Seq, Opts);
+                                  {ok, _} -> next_publish_pub(ClientPID, Seq, Opts);
                                   {error, Reason} ->
                                       inc_counter(pub_fail),
                                       io:format("client: publish error - ~p~n", [Reason])
@@ -814,7 +834,7 @@ next_publish(Opts) ->
     end,
     ok.
 
-next_publish_pub(Client, Opts) ->
+next_publish_pub(Client, Seq, Opts) ->
     LoopPid = proplists:get_value(loop_pid, Opts, self()),
     Interval = proplists:get_value(interval_of_msg, Opts),
     LastT = get(last_publish_ts),
@@ -824,8 +844,8 @@ next_publish_pub(Client, Opts) ->
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
     inc_counter(pub),
     case Remain > 0 of
-        true -> _ = erlang:send_after(Remain, LoopPid, {publish, Client});
-        false -> LoopPid ! {publish, Client}
+        true -> _ = erlang:send_after(Remain, LoopPid, ?PUBLISH(Client, Seq));
+        false -> LoopPid ! ?PUBLISH(Client, Seq)
     end,
     ok.
 
@@ -860,6 +880,13 @@ publish(Client, Opts) ->
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
     emqtt:publish(Client, topic_opt(Opts), Payload, Flags).
+
+publish_pub(Client, Seq, Opts) ->
+    ok = put_publish_begin_time(),
+    Flags   = [{qos, proplists:get_value(qos, Opts)},
+               {retain, proplists:get_value(retain, Opts)}],
+    Payload = proplists:get_value(payload, Opts),
+    emqtt:publish(Client, topic_opt([{seq, Seq} | Opts]), Payload, Flags).
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
