@@ -630,7 +630,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
             io:format("client(~w): disconnected with reason ~w: ~p~n",
                       [N, ReasonCode, emqtt:reason_code_name(ReasonCode)]);
         Other ->
-            io:format("client(~w): discarded unkonwn message ~p~n", [N, Other]),
+            io:format("client(~w): discarded unknown message ~p~n", [N, Other]),
             loop(Parent, N, Client, PubSub, Opts)
     after
         Idle ->
