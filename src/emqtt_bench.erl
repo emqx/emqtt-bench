@@ -736,16 +736,18 @@ loop_pub(Parent, Clients, Opts) ->
             inc_counter(recv),
             loop_pub(Parent, Clients, Opts);
         {'EXIT', _Client, normal} ->
-            ok;
+            loop_pub(Parent, Clients, Opts);
         {'EXIT', _Client, Reason} ->
-            io:format("client: EXIT for ~p~n", [Reason]);
+            io:format("client: EXIT for ~p~n", [Reason]),
+            loop_pub(Parent, Clients, Opts);
         puback ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
             loop_pub(Parent, Clients, Opts);
         {disconnected, ReasonCode, _Meta} ->
             io:format("client: disconnected with reason ~w: ~p~n",
-                      [ReasonCode, emqtt:reason_code_name(ReasonCode)]);
+                      [ReasonCode, emqtt:reason_code_name(ReasonCode)]),
+            loop_pub(Parent, Clients, Opts);
         Other ->
             io:format("client: discarded unkonwn message ~p~n", [Other]),
             loop_pub(Parent, Clients, Opts)
