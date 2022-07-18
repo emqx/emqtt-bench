@@ -498,7 +498,7 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                 end,
     case PubSub of
         pub ->
-            connect_pub(Parent, N, #{}, Opts0, AddrList, HostList);
+            connect_pub(Parent, N, #{}, [{loop_pid, self()} | Opts0], AddrList, HostList);
         _ ->
             Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
                                        , {host, shard_addr(N, HostList)}
