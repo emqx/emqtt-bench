@@ -595,7 +595,6 @@ loop(Parent, N, Client, PubSub, Opts) ->
     Interval = proplists:get_value(interval_of_msg, Opts, 0),
     Idle = max(Interval * 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
-    ok = put_publish_begin_time(),
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
@@ -649,10 +648,15 @@ loop(Parent, N, Client, PubSub, Opts) ->
             proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
 	end.
 
-put_publish_begin_time() ->
-    NowT = erlang:monotonic_time(millisecond),
-    put(publish_begin_ts, NowT),
-    ok.
+ensure_publish_begin_time() ->
+    case get_publish_begin_time() of
+        undefined ->
+            NowT = erlang:monotonic_time(millisecond),
+            put(publish_begin_ts, NowT),
+            ok;
+        _ ->
+            ok
+    end.
 
 get_publish_begin_time() ->
     get(publish_begin_ts).
@@ -707,6 +711,9 @@ subscribe(Client, N, Opts) ->
     Res.
 
 publish(Client, Opts) ->
+    %% Ensure publish begin time is initialized right before the first publish,
+    %% because the first publish may get delayed (after entering the loop)
+    ok = ensure_publish_begin_time(),
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
