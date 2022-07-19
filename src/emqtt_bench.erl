@@ -554,8 +554,14 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     Clients = Clients0#{Client => true},
-    maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
-    drain_published_pub(),
+    case is_reference(MRef) of
+        true ->
+            ok;
+        false ->
+            maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
+            drain_published_pub(),
+            ok
+    end,
     case ConnRet of
         {ok, _Props} ->
             case MRef of
