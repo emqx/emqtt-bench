@@ -19,7 +19,7 @@ Use the new Erlang MQTT v5.0 client
 
 ## 0.3 (2016-01-29)
 
-emqtt_bench_sub: support to subscribe mutiple topics (#9)
+emqtt_bench_sub: support to subscribe multiple topics (#9)
 
 ## 0.2 (2015-10-08)
 
