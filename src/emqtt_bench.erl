@@ -714,11 +714,10 @@ loop_pub(Parent, Clients, Opts) ->
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
-            NumClients = maps:size(Clients),
             lists:foreach(fun(C) ->
                                   erlang:send_after(RandomPubWaitMS, LoopPid, {publish, C})
                           end,
-                         maps:keys(NumClients)),
+                         maps:keys(Clients)),
             loop_pub(Parent, Clients, Opts);
         ?PUBLISH(ClientPID, Seq) ->
             case (proplists:get_value(limit_fun, Opts))() of
