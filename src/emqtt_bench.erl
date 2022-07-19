@@ -554,7 +554,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
-    Clients = Clients0#{Client => true},
+    Clients = Clients0#{Client => Seq},
     case is_reference(MRef) of
         true ->
             ok;
@@ -714,10 +714,10 @@ loop_pub(Parent, Clients, Opts) ->
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
-            lists:foreach(fun(C) ->
-                                  erlang:send_after(RandomPubWaitMS, LoopPid, {publish, C})
+            lists:foreach(fun({C, S}) ->
+                                  erlang:send_after(RandomPubWaitMS, LoopPid, ?PUBLISH(C, S))
                           end,
-                         maps:keys(Clients)),
+                         maps:to_list(Clients)),
             loop_pub(Parent, Clients, Opts);
         ?PUBLISH(ClientPID, Seq) ->
             case (proplists:get_value(limit_fun, Opts))() of
