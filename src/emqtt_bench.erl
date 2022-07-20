@@ -525,6 +525,7 @@ connect_pub(Parent, 0, Clients, Opts, _AddrList, _HostList) ->
                , {pub_start_wait, RandomPubWaitMS}
                , {loop_pid, self()}
                | Opts],
+    persistent_term:put({all_clients, Clients}),
     loop_pub(Parent, Clients, loop_opts(AllOpts));
 connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     process_flag(trap_exit, true),
@@ -720,6 +721,9 @@ loop_pub(Parent, Clients, Opts) ->
                                   erlang:send_after(RandomPubWaitMS, LoopPid, ?PUBLISH(C, S))
                           end,
                          maps:to_list(Clients)),
+            loop_pub(Parent, Clients, Opts);
+        {get_state, From} ->
+            From ! {loop_state, #{clients => Clients, opts => Opts}},
             loop_pub(Parent, Clients, Opts);
         ?PUBLISH(ClientPID, Seq) ->
             case (proplists:get_value(limit_fun, Opts))() of
