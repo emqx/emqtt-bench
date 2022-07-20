@@ -525,7 +525,7 @@ connect_pub(Parent, 0, Clients, Opts, _AddrList, _HostList) ->
                , {pub_start_wait, RandomPubWaitMS}
                , {loop_pid, self()}
                | Opts],
-    persistent_term:put({all_clients, Clients}),
+    persistent_term:put({all_clients, self()}, Clients),
     loop_pub(Parent, Clients, loop_opts(AllOpts));
 connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     process_flag(trap_exit, true),
@@ -599,7 +599,7 @@ maybe_publish(Parent, Clients, Opts) ->
     receive
         ?PUBLISH(Client, Seq) ->
             case Clients of
-                #{Client := true} ->
+                #{Client := _Seq} ->
                     spawn(
                       fun() ->
                               case (proplists:get_value(limit_fun, Opts))() of
