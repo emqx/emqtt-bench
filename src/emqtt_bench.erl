@@ -319,6 +319,8 @@ start(PubSub, Opts) ->
     io:format("Start with ~p workers, addrs pool size: ~p and req interval: ~p ms ~n~n",
               [NoWorkers, NoAddrs, Interval]),
     true = (Interval >= 1),
+    PubInterval = proplists:get_value(interval_of_msg, Opts, 0),
+    application:set_env(emqtt_bench, pub_interval, PubInterval),
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
                           CountParm = case Rem =/= 0 andalso P == 1 of
@@ -851,7 +853,10 @@ next_publish(Opts) ->
 
 next_publish_pub(Client, Seq, Opts) ->
     LoopPid = proplists:get_value(loop_pid, Opts, self()),
-    Interval = proplists:get_value(interval_of_msg, Opts),
+    Interval = case application:get_env(emqtt_bench, pub_interval) of
+                   {ok, I} -> I;
+                   undefined -> proplists:get_value(interval_of_msg, Opts)
+               end,
     LastT = get(last_publish_ts),
     NowT = erlang:monotonic_time(millisecond),
     Spent = NowT - LastT,
