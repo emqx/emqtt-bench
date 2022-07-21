@@ -500,7 +500,7 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                 end,
     case PubSub of
         pub ->
-            process_flag(priority, max),
+            process_flag(priority, high),
             connect_pub(Parent, N, #{}, [{loop_pid, self()} | Opts0], AddrList, HostList);
         _ ->
             Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
@@ -595,6 +595,10 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
                     connect_pub(Parent, N, Clients0, [{connection_attempts, Retries + 1} | NOpts], AddrList, HostList)
             end
     end.
+
+%% hack for massive tests...  avoid overloading servers during ramp up
+inhibit_publish() ->
+    filelib:is_regular("/tmp/inhibit_pub").
 
 %% to avoid massive hit when everyone connects
 maybe_publish(Parent, Clients, Opts) ->
@@ -906,7 +910,12 @@ publish_pub(Client, Seq, Opts) ->
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
-    emqtt:publish(Client, topic_opt([{seq, Seq} | Opts]), Payload, Flags).
+    case inhibit_publish() of
+        true ->
+            ok;
+        false ->
+            emqtt:publish(Client, topic_opt([{seq, Seq} | Opts]), Payload, Flags)
+    end.
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
