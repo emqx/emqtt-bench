@@ -311,6 +311,7 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
+    ets:new(qoe_store, [named_table, public, ordered_set]),
     prepare(PubSub, Opts), init(),
     IfAddr = proplists:get_value(ifaddr, Opts),
     Host = proplists:get_value(host, Opts),
@@ -347,7 +348,7 @@ start(PubSub, Opts) ->
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
     maybe_spawn_gc_enforcer(Opts),
-    main_loop(erlang:monotonic_time(millisecond), _Count = 0).
+    main_loop(erlang:monotonic_time(millisecond), Count).
 
 prepare(PubSub, Opts) ->
     Sname = list_to_atom(lists:flatten(io_lib:format("~p-~p-~p", [?MODULE, PubSub, rand:uniform(1000)]))),
@@ -359,7 +360,9 @@ prepare(PubSub, Opts) ->
             ok
     end,
     case proplists:get_bool(quic, Opts) of
-        true -> maybe_start_quicer() orelse error({quic, not_supp_or_disabled});
+        true ->
+          maybe_start_quicer() orelse error({quic, not_supp_or_disabled}),
+          prepare_for_quic(Opts);
         _ ->
             ok
     end,
@@ -382,18 +385,48 @@ init() ->
     put({stats, connect_fail}, InitS).
 
 
-main_loop(Uptime, Count0) ->
+main_loop(Uptime, Count) ->
     receive
         publish_complete ->
             return_print("publish complete~n", []);
         stats ->
             print_stats(Uptime),
+            maybe_print_qoe(Count),
+            maybe_dump_nst_dets(Count),
             garbage_collect(),
-            main_loop(Uptime, Count0);
+            main_loop(Uptime, Count);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
-            main_loop(Uptime, Count0)
+            main_loop(Uptime, Count)
     end.
+
+maybe_dump_nst_dets(Count)->
+    Count == ets:info(quic_clients_nsts, size)
+      andalso undefined =/= dets:info(dets_quic_nsts)
+      andalso ets:to_dets(quic_clients_nsts, dets_quic_nsts).
+
+maybe_print_qoe(Count) ->
+   %% latency statistic for
+   %% - handshake
+   %% - conn
+   %% - sub
+   case ets:info(qoe_store, size) of
+      Count ->
+         do_print_qoe(ets:tab2list(qoe_store));
+      _ ->
+         skip
+   end.
+do_print_qoe([]) ->
+   skip;
+do_print_qoe(Data) ->
+   {H, C, S} = lists:unzip3([ V || {_C, V} <-Data]),
+   lists:foreach(
+     fun({_Name, 0})-> skip;
+        ({Name, X}) ->
+           io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
+                     [Name, lists:sum(X)/length(X), p95(X), lists:max(X)])
+     end, [{handshake, H}, {connect, C}, {subscribe, S}]),
+   lists:foreach(fun({Client, _}) -> ets:delete(qoe_store, Client) end, Data).
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
@@ -534,6 +567,7 @@ connect(Parent, N, PubSub, Opts) ->
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}]
         ++ session_property_opts(Opts)
+        ++ quic_opts(Opts, ClientId)
         ++ mqtt_opts(Opts),
     MqttOpts1 = case PubSub of
                   conn -> [{force_ping, true} | MqttOpts];
@@ -702,8 +736,23 @@ subscribe(Client, N, Opts) ->
     Qos = proplists:get_value(qos, Opts),
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
     case Res of
-        {ok, _, _} ->
-            ok;
+       {ok, _, _} ->
+          case proplists:get_value(qoe, emqtt:info(Client)) of
+             false ->
+                ok;
+             #{ initialized := StartTs
+              , handshaked := HSTs
+              , connected := ConnTs
+              , subscribed := SubTs
+              }  ->
+                ElapsedHandshake = HSTs - StartTs,
+                ElapsedConn = ConnTs - StartTs,
+                ElapsedSub = SubTs - StartTs,
+                true = ets:insert(qoe_store, {proplists:get_value(client_id, Opts),
+                                              {ElapsedHandshake, ElapsedConn, ElapsedSub}
+                                             }),
+                ok
+          end;
         {error, Reason} ->
             io:format("client(~w): subscribe error - ~p~n", [N, Reason]),
             emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
@@ -997,3 +1046,39 @@ addr_to_list(Input) ->
 shard_addr(N, AddrList) ->
     Offset = N rem length(AddrList),
     lists:nth(Offset + 1, AddrList).
+
+quic_opts(Opts, ClientId) when is_binary(ClientId) ->
+   case proplists:get_value(nst_dets_file, Opts, undefined) of
+      undefined -> [];
+      _Filename ->
+         case ets:lookup(quic_clients_nsts, ClientId) of
+            [{ClientId, Ticket}] ->
+               [{nst, Ticket}];
+            [] ->
+               []
+         end
+   end.
+
+-spec p95([integer()]) -> integer().
+p95(List)->
+   percentile(List, 0.95).
+percentile(Input, P) ->
+   Len = length(Input),
+   Pos = ceil(Len * P),
+   lists:nth(Pos, lists:sort(Input)).
+
+-spec prepare_for_quic(proplists:proplist()) -> ok | skip.
+prepare_for_quic(Opts)->
+   %% Create ets table for 0-RTT session tickets
+   ets:new(quic_clients_nsts, [named_table, public, ordered_set,
+                               {write_concurrency, true},
+                               {read_concurrency,true}]),
+   %% Load session tickets from dets file if specified.
+   case proplists:get_value(nst_dets_file, Opts, undefined) of
+      undefined ->
+         skip;
+      Filename ->
+         {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, Filename}]),
+         true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
+         ok
+   end.
