@@ -320,7 +320,9 @@ start(PubSub, Opts) ->
               [NoWorkers, NoAddrs, Interval]),
     true = (Interval >= 1),
     PubInterval = proplists:get_value(interval_of_msg, Opts, 0),
+    PubQoS = proplists:get_value(qos, Opts, 1),
     application:set_env(emqtt_bench, pub_interval, PubInterval),
+    application:set_env(emqtt_bench, pub_qos, PubQoS),
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
                           CountParm = case Rem =/= 0 andalso P == 1 of
@@ -907,7 +909,11 @@ publish(Client, Opts) ->
 
 publish_pub(Client, Seq, Opts) ->
     ok = put_publish_begin_time(),
-    Flags   = [{qos, proplists:get_value(qos, Opts)},
+    QoS = case application:get_env(emqtt_bench, pub_qos, undefined) of
+              undefined -> proplists:get_value(qos, Opts);
+              QoS0 -> QoS0
+          end,
+    Flags   = [{qos, QoS},
                {retain, proplists:get_value(retain, Opts)}],
     Payload = proplists:get_value(payload, Opts),
     case inhibit_publish() of
