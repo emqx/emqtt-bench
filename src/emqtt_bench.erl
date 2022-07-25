@@ -82,6 +82,7 @@
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {fuel, undefined, "fuel", {integer, 10}, "fuel for maybe_publish"},
          {inflight, $F,"inflight", {integer, 1},
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
          {wait_before_publishing, $w, "wait-before-publishing", {boolean, false},
@@ -568,7 +569,8 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     %%         drain_published_pub(),
     %%         ok
     %% end,
-    maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
+    Fuel = proplists:get_value(fuel, Opts, 10),
+    maybe_publish(Fuel, Parent, Clients, [{client_id, ClientId} | Opts]),
     drain_published_pub(Opts),
     case ConnRet of
         {ok, _Props} ->
@@ -603,7 +605,9 @@ inhibit_publish() ->
     filelib:is_regular("/tmp/inhibit_pub").
 
 %% to avoid massive hit when everyone connects
-maybe_publish(Parent, Clients, Opts) ->
+maybe_publish(Fuel, Parent, Clients, Opts) when Fuel =< 0 ->
+    ok;
+maybe_publish(Fuel, Parent, Clients, Opts) ->
     receive
         ?PUBLISH(Client, Seq) ->
             case Clients of
@@ -629,7 +633,7 @@ maybe_publish(Parent, Clients, Opts) ->
                         true -> garbage_collect();
                         false -> ok
                     end,
-                    maybe_publish(Parent, Clients, Opts);
+                    maybe_publish(Fuel - 1, Parent, Clients, Opts);
                 _ ->
                     ok
             end
