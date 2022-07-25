@@ -569,7 +569,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     %%         ok
     %% end,
     maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
-    drain_published_pub(),
+    drain_published_pub(Opts),
     case ConnRet of
         {ok, _Props} ->
             case MRef of
@@ -625,6 +625,10 @@ maybe_publish(Parent, Clients, Opts) ->
                                       exit(normal)
                               end
                       end),
+                    case proplists:get_bool(lowmem, Opts) of
+                        true -> garbage_collect();
+                        false -> ok
+                    end,
                     maybe_publish(Parent, Clients, Opts);
                 _ ->
                     ok
@@ -690,15 +694,23 @@ connect(Parent, N, PubSub, Opts) ->
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
     end.
 
-drain_published_pub() ->
+drain_published_pub(Opts) ->
     receive
         published ->
             inc_counter(recv),
-            drain_published_pub();
+            case proplists:get_bool(lowmem, Opts) of
+                true -> garbage_collect();
+                false -> ok
+            end,
+            drain_published_pub(Opts);
         puback ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
-            drain_published_pub()
+            case proplists:get_bool(lowmem, Opts) of
+                true -> garbage_collect();
+                false -> ok
+            end,
+            drain_published_pub(Opts)
     after
         0 ->
             ok
