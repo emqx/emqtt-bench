@@ -605,7 +605,7 @@ inhibit_publish() ->
     filelib:is_regular("/tmp/inhibit_pub").
 
 %% to avoid massive hit when everyone connects
-maybe_publish(Fuel, Parent, Clients, Opts) when Fuel =< 0 ->
+maybe_publish(Fuel, _Parent, _Clients, _Opts) when Fuel =< 0 ->
     ok;
 maybe_publish(Fuel, Parent, Clients, Opts) ->
     receive
