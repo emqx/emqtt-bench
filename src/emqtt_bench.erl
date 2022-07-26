@@ -24,6 +24,7 @@
         , run/5
         , connect/4
         , loop/5
+        , loop_pub/3
         ]).
 
 -define(PUB_OPTS,
@@ -504,7 +505,16 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
     case PubSub of
         pub ->
             process_flag(priority, high),
-            connect_pub(Parent, N, #{}, [{loop_pid, self()} | Opts0], AddrList, HostList);
+            %% HACK:  trying to get this to work...
+            %% BREAKS wait-before-publishing
+            LoopPid = case proplists:get_bool(wait_before_publishing, Opts0) of
+                          true ->
+                              self();
+                          false ->
+                              Clients = #{},
+                              spawn(?MODULE, loop_pub, [Parent, Clients, Opts0])
+                      end,
+            connect_pub(Parent, N, #{}, [{loop_pid, LoopPid} | Opts0], AddrList, HostList);
         _ ->
             Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
                                        , {host, shard_addr(N, HostList)}
@@ -528,16 +538,24 @@ connect_pub(Parent, 0, Clients, Opts, _AddrList, _HostList) ->
     AllOpts  = [ {seq, StartNum}
                , {client_id, ClientId}
                , {pub_start_wait, RandomPubWaitMS}
-               , {loop_pid, self()}
                | Opts],
     persistent_term:put({all_clients, self()}, Clients),
-    loop_pub(Parent, Clients, loop_opts(AllOpts));
+    case proplists:get_value(loop_pid, Opts) =:= self() of
+        true ->
+            loop_pub(Parent, Clients, loop_opts(AllOpts));
+        false ->
+            %% already spawned loop pid; just hang
+            receive
+                die -> ok
+            end
+    end;
 connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     process_flag(trap_exit, true),
     Opts0 = replace_opts(Opts00, [ {ifaddr, shard_addr(N, AddrList)}
                                  , {host, shard_addr(N, HostList)}
                                  ]),
     StartNum = proplists:get_value(startnumber, Opts0),
+    LoopPid = proplists:get_value(loop_pid, Opts0),
     Seq = StartNum + N,
     rand:seed(exsplus, erlang:timestamp()),
     MRef = case {proplists:get_value(publish_signal_mref, Opts0),
@@ -576,7 +594,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
         {ok, _Props} ->
             case MRef of
                 undefined ->
-                    erlang:send_after(RandomPubWaitMS, self(), ?PUBLISH(Client, Seq));
+                    erlang:send_after(RandomPubWaitMS, LoopPid, ?PUBLISH(Client, Seq));
                 _ ->
                     %% send `publish' only when all publishers
                     %% are in place.
@@ -736,8 +754,11 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
             connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
     end.
 
-loop_pub(Parent, Clients, Opts) ->
-    LoopPid = proplists:get_value(loop_pid, Opts, self()),
+loop_pub(Parent, Clients, Opts0) ->
+    {Opts, LoopPid} = case proplists:get_value(loop_pid, Opts0, undef) of
+                          undef -> {[{loop_pid, self()} | Opts0], self()};
+                          SomePid -> {Opts0, SomePid}
+                      end,
     Idle = max(proplists:get_value(interval_of_msg, Opts, 0) * 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
