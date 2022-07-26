@@ -758,9 +758,11 @@ loop_pub(Parent, Clients, Opts) ->
                         end,
                         maps:to_list(Clients))
               end),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         {get_state, From} ->
             From ! {loop_state, #{clients => Clients, opts => Opts}},
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         ?PUBLISH(ClientPID, Seq) ->
             case (proplists:get_value(limit_fun, Opts))() of
@@ -776,29 +778,37 @@ loop_pub(Parent, Clients, Opts) ->
                                       io:format("client: publish error - ~p~n", [Reason])
                               end
                       end),
+                    garbage_collect(),
                     loop_pub(Parent, Clients, Opts);
                 _ ->
                     Parent ! publish_complete,
+                    garbage_collect(),
                     exit(normal)
             end;
         published ->
             inc_counter(recv),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         {'EXIT', _Client, normal} ->
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         {'EXIT', _Client, Reason} ->
             io:format("client: EXIT for ~p~n", [Reason]),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         puback ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         {disconnected, ReasonCode, _Meta} ->
             io:format("client: disconnected with reason ~w: ~p~n",
                       [ReasonCode, emqtt:reason_code_name(ReasonCode)]),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts);
         Other ->
             io:format("client: discarded unkonwn message ~p~n", [Other]),
+            garbage_collect(),
             loop_pub(Parent, Clients, Opts)
     after
         Idle ->
