@@ -561,17 +561,17 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     Clients = Clients0#{Client => Seq},
-    %% case is_reference(MRef) of
-    %%     true ->
-    %%         ok;
-    %%     false ->
-    %%         maybe_publish(Parent, Clients, [{client_id, ClientId} | Opts]),
-    %%         drain_published_pub(),
-    %%         ok
-    %% end,
     Fuel = proplists:get_value(fuel, Opts, 10),
-    maybe_publish(Fuel, Parent, Clients, [{client_id, ClientId} | Opts]),
-    drain_published_pub(Opts),
+    case is_reference(MRef) of
+        true ->
+            ok;
+        false ->
+            maybe_publish(Fuel, Parent, Clients, [{client_id, ClientId} | Opts]),
+            drain_published_pub(Fuel, Opts),
+            ok
+    end,
+    %% maybe_publish(Fuel, Parent, Clients, [{client_id, ClientId} | Opts]),
+    %% drain_published_pub(Fuel, Opts),
     case ConnRet of
         {ok, _Props} ->
             case MRef of
@@ -698,7 +698,9 @@ connect(Parent, N, PubSub, Opts) ->
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
     end.
 
-drain_published_pub(Opts) ->
+drain_published_pub(Fuel, _Opts) when Fuel =< 0 ->
+    ok;
+drain_published_pub(Fuel, Opts) ->
     receive
         published ->
             inc_counter(recv),
@@ -706,7 +708,7 @@ drain_published_pub(Opts) ->
                 true -> garbage_collect();
                 false -> ok
             end,
-            drain_published_pub(Opts);
+            drain_published_pub(Fuel - 1, Opts);
         puback ->
             %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
             inc_counter(pub_succ),
@@ -714,7 +716,7 @@ drain_published_pub(Opts) ->
                 true -> garbage_collect();
                 false -> ok
             end,
-            drain_published_pub(Opts)
+            drain_published_pub(Fuel - 1, Opts)
     after
         0 ->
             ok
@@ -741,10 +743,21 @@ loop_pub(Parent, Clients, Opts) ->
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
-            lists:foreach(fun({C, S}) ->
-                                  erlang:send_after(RandomPubWaitMS, LoopPid, ?PUBLISH(C, S))
-                          end,
-                         maps:to_list(Clients)),
+            PubInterval = case application:get_env(emqtt_bench, pub_interval) of
+                   {ok, I} -> I;
+                   undefined -> proplists:get_value(interval_of_msg, Opts)
+               end,
+            NumClients = maps:size(Clients),
+            TimeToSleep = max(500, PubInterval div NumClients),
+            spawn(
+              fun() ->
+                      lists:foreach(
+                        fun({C, S}) ->
+                                erlang:send_after(RandomPubWaitMS, LoopPid, ?PUBLISH(C, S)),
+                                timer:sleep(TimeToSleep)
+                        end,
+                        maps:to_list(Clients))
+              end),
             loop_pub(Parent, Clients, Opts);
         {get_state, From} ->
             From ! {loop_state, #{clients => Clients, opts => Opts}},
@@ -1206,6 +1219,15 @@ maybe_spawn_gc_enforcer(Opts) ->
         {true, _} ->
             ignore
     end.
+
+%% -spec sleep_and_repeats(pos_integer(), pos_integer()) -> {Sleep, Repeats}
+%%               when Sleep :: pos_integer(),
+%%                    Repeats :: pos_integer().
+%% sleep_and_repeats(Num, IntervalMS0) ->
+%%     IntervalMS = max(IntervalMS0, 1),
+%%     case IntervalMS >= Num of
+%%         true -> {IntervalMS div Num, 1};
+%%         false -> {Num div IntervalMS}
 
 -spec addr_to_list(string() | undefined) -> [Ipstr::string() | undefined].
 addr_to_list(Input) ->
