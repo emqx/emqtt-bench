@@ -56,6 +56,8 @@
           "set the message content for publish"},
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
+         {qoe, $Q, "qoe", {boolean, false},
+          "Enable QoE tracking"},
          {retain, $r, "retain", {boolean, false},
           "retain message"},
          {keepalive, $k, "keepalive", {integer, 300},
@@ -76,6 +78,7 @@
           "websocket transport"},
          {quic, undefined, "quic", {boolean, false},
           "QUIC transport"},
+         {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -127,6 +130,8 @@
           "topic subscribe, support %u, %c, %i variables"},
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
+         {qoe, $Q, "qoe", {boolean, false},
+          "Enable QoE tracking"},
          {username, $u, "username", string,
           "username for connecting to server"},
          {password, $P, "password", string,
@@ -147,6 +152,7 @@
           "websocket transport"},
          {quic, undefined, "quic", {boolean, false},
           "QUIC transport"},
+         {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -181,6 +187,8 @@
          {count, $c, "count", {integer, 200},
           "max count of clients"},
          {startnumber, $n, "startnumber", {integer, 0}, "start number"},
+         {qoe, $Q, "qoe", {boolean, false},
+          "Enable QoE tracking"},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
          {username, $u, "username", string,
@@ -201,6 +209,7 @@
           "client private key for authentication, if required by server"},
          {quic, undefined, "quic", {boolean, false},
           "QUIC transport"},
+         {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, "client id prefix"},
@@ -816,6 +825,8 @@ mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
+mqtt_opts([{qoe, Bool}|Opts], Acc) ->
+    mqtt_opts(Opts, [{with_qoe_metrics, Bool} | Acc]);
 mqtt_opts([{inflight, InFlight0}|Opts], Acc) ->
     InFlight = case InFlight0 of
                    0 -> infinity;
