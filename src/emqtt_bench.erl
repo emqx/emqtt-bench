@@ -84,6 +84,8 @@
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {fuel, undefined, "fuel", {integer, 10}, "fuel for maybe_publish"},
+         {connect_timeout, undefined, "connect-timeout", {integer, 60},
+          "timeout for connecting (s)"},
          {inflight, $F,"inflight", {integer, 1},
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
          {wait_before_publishing, $w, "wait-before-publishing", {boolean, false},
@@ -150,6 +152,8 @@
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {connect_timeout, undefined, "connect-timeout", {integer, 60},
+          "timeout for connecting (s)"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
@@ -199,6 +203,8 @@
          {shortids, $s, "shortids", {boolean, false},
           "use short ids for client ids"},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
+         {connect_timeout, undefined, "connect-timeout", {integer, 60},
+          "timeout for connecting (s)"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
          {force_major_gc_interval, undefined, "force-major-gc-interval", {integer, 0},
@@ -1036,6 +1042,8 @@ mqtt_opts([{ssl, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
+mqtt_opts([{connect_timeout, I}|Opts], Acc) ->
+    mqtt_opts(Opts, [{connect_timeout, I} | Acc]);
 mqtt_opts([{inflight, InFlight0}|Opts], Acc) ->
     InFlight = case InFlight0 of
                    0 -> infinity;
