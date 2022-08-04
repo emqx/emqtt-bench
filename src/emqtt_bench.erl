@@ -230,19 +230,7 @@
          }
         ]).
 
--define(COUNTERS, 16).
--define(IDX_RECV, 2).
--define(IDX_SUB, 3).
--define(IDX_SUB_FAIL, 4).
--define(IDX_PUB, 5).
--define(IDX_PUB_FAIL, 6).
--define(IDX_PUB_OVERRUN, 7).
--define(IDX_PUB_SUCCESS, 8).
--define(IDX_CONN_SUCCESS, 9).
--define(IDX_CONN_FAIL, 10).
--define(IDX_QUIC_FAIL_UNREACH, 11).
--define(IDX_QUIC_FAIL_CONNECTION_REFUSED, 12).
--define(IDX_CONN_RETRIED, 13).
+-define(cnt_map, cnt_map).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -382,13 +370,20 @@ prepare(PubSub, Opts) ->
 
 init() ->
     process_flag(trap_exit, true),
-    CRef = counters:new(?COUNTERS, [write_concurrency]),
-    ok = persistent_term:put(?MODULE, CRef),
     Now = erlang:monotonic_time(millisecond),
+    Counters = counters(),
+    CRef = counters:new(length(Counters)+1, [write_concurrency]),
+    ok = persistent_term:put(?MODULE, CRef),
+    %% init counters
     InitS = {Now, 0},
+    ets:new(?cnt_map, [ named_table
+                      , ordered_set
+                      , protected
+                      , {read_concurrency, true}]),
+    true = ets:insert(?cnt_map, Counters),
     lists:foreach(fun({C, _Idx}) ->
                         put({stats, C}, InitS)
-                  end, counters()).
+                  end, Counters).
 
 main_loop(Uptime, Count) ->
     receive
@@ -485,55 +480,13 @@ maybe_feed(ReturnMaybeFeed) ->
 maybe_feed(return, feed) -> io:format("\n");
 maybe_feed(_, _) -> ok.
 
-get_counter(recv) ->
-    counters:get(cnt_ref(), ?IDX_RECV);
-get_counter(sub) ->
-    counters:get(cnt_ref(), ?IDX_SUB);
-get_counter(pub) ->
-    counters:get(cnt_ref(), ?IDX_PUB);
-get_counter(pub_succ) ->
-    counters:get(cnt_ref(), ?IDX_PUB_SUCCESS);
-get_counter(sub_fail) ->
-    counters:get(cnt_ref(), ?IDX_SUB_FAIL);
-get_counter(pub_fail) ->
-    counters:get(cnt_ref(), ?IDX_PUB_FAIL);
-get_counter(pub_overrun) ->
-    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN);
-get_counter(connect_succ) ->
-    counters:get(cnt_ref(), ?IDX_CONN_SUCCESS);
-get_counter(connect_fail) ->
-    counters:get(cnt_ref(), ?IDX_CONN_FAIL);
-get_counter(unreachable) ->
-   counters:get(cnt_ref(), ?IDX_QUIC_FAIL_UNREACH);
-get_counter(connection_refused) ->
-   counters:get(cnt_ref(), ?IDX_QUIC_FAIL_CONNECTION_REFUSED);
-get_counter(connection_retried) ->
-   counters:get(cnt_ref(), ?IDX_CONN_RETRIED).
+get_counter(CntName) ->
+    [{CntName, Idx}] = ets:lookup(?cnt_map, CntName),
+    counters:get(cnt_ref(), Idx).
 
-inc_counter(recv) ->
-    counters:add(cnt_ref(), ?IDX_RECV, 1);
-inc_counter(sub) ->
-    counters:add(cnt_ref(), ?IDX_SUB, 1);
-inc_counter(sub_fail) ->
-    counters:add(cnt_ref(), ?IDX_SUB_FAIL, 1);
-inc_counter(pub) ->
-    counters:add(cnt_ref(), ?IDX_PUB, 1);
-inc_counter(pub_succ) ->
-    counters:add(cnt_ref(), ?IDX_PUB_SUCCESS, 1);
-inc_counter(pub_fail) ->
-    counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
-inc_counter(pub_overrun) ->
-    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1);
-inc_counter(connect_succ) ->
-    counters:add(cnt_ref(), ?IDX_CONN_SUCCESS, 1);
-inc_counter(unreachable) ->
-    counters:add(cnt_ref(), ?IDX_QUIC_FAIL_UNREACH, 1);
-inc_counter(connection_refused) ->
-    counters:add(cnt_ref(), ?IDX_QUIC_FAIL_CONNECTION_REFUSED, 1);
-inc_counter(connect_fail) ->
-   counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1);
-inc_counter(connect_retried) ->
-   counters:add(cnt_ref(), ?IDX_CONN_RETRIED, 1).
+inc_counter(CntName) ->
+   [{CntName, Idx}] = ets:lookup(?cnt_map, CntName),
+    counters:add(cnt_ref(), Idx, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -1113,12 +1066,12 @@ prepare_for_quic(Opts)->
 -spec counters() -> {atom(), integer()}.
 counters() ->
    Names = [ recv
+           , sub
+           , sub_fail
            , pub
-           , pub_succ
            , pub_fail
            , pub_overrun
-           , sub_fail
-           , sub
+           , pub_succ
            , connect_succ
            , connect_fail
            , unreachable
