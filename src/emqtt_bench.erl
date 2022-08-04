@@ -240,6 +240,9 @@
 -define(IDX_PUB_SUCCESS, 8).
 -define(IDX_CONN_SUCCESS, 9).
 -define(IDX_CONN_FAIL, 10).
+-define(IDX_QUIC_FAIL_UNREACH, 11).
+-define(IDX_QUIC_FAIL_CONNECTION_REFUSED, 12).
+-define(IDX_CONN_RETRIED, 13).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -383,16 +386,9 @@ init() ->
     ok = persistent_term:put(?MODULE, CRef),
     Now = erlang:monotonic_time(millisecond),
     InitS = {Now, 0},
-    put({stats, recv}, InitS),
-    put({stats, pub}, InitS),
-    put({stats, pub_succ}, InitS),
-    put({stats, pub_fail}, InitS),
-    put({stats, pub_overrun}, InitS),
-    put({stats, sub_fail}, InitS),
-    put({stats, sub}, InitS),
-    put({stats, connect_succ}, InitS),
-    put({stats, connect_fail}, InitS).
-
+    lists:foreach(fun({C, _Idx}) ->
+                        put({stats, C}, InitS)
+                  end, counters()).
 
 main_loop(Uptime, Count) ->
     receive
@@ -439,7 +435,7 @@ do_print_qoe(Data) ->
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun, connect_succ, connect_fail]],
+        {Cnt, _Idx} <- counters()],
     ok.
 
 print_stats(Uptime, Name) ->
@@ -506,7 +502,13 @@ get_counter(pub_overrun) ->
 get_counter(connect_succ) ->
     counters:get(cnt_ref(), ?IDX_CONN_SUCCESS);
 get_counter(connect_fail) ->
-    counters:get(cnt_ref(), ?IDX_CONN_FAIL).
+    counters:get(cnt_ref(), ?IDX_CONN_FAIL);
+get_counter(unreachable) ->
+   counters:get(cnt_ref(), ?IDX_QUIC_FAIL_UNREACH);
+get_counter(connection_refused) ->
+   counters:get(cnt_ref(), ?IDX_QUIC_FAIL_CONNECTION_REFUSED);
+get_counter(connection_retried) ->
+   counters:get(cnt_ref(), ?IDX_CONN_RETRIED).
 
 inc_counter(recv) ->
     counters:add(cnt_ref(), ?IDX_RECV, 1);
@@ -524,8 +526,14 @@ inc_counter(pub_overrun) ->
     counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1);
 inc_counter(connect_succ) ->
     counters:add(cnt_ref(), ?IDX_CONN_SUCCESS, 1);
+inc_counter(unreachable) ->
+    counters:add(cnt_ref(), ?IDX_QUIC_FAIL_UNREACH, 1);
+inc_counter(connection_refused) ->
+    counters:add(cnt_ref(), ?IDX_QUIC_FAIL_CONNECTION_REFUSED, 1);
 inc_counter(connect_fail) ->
-    counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1).
+   counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1);
+inc_counter(connect_retried) ->
+   counters:add(cnt_ref(), ?IDX_CONN_RETRIED, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -615,6 +623,9 @@ connect(Parent, N, PubSub, Opts) ->
                     PubSub =:= sub andalso inc_counter(sub),
                     loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
             end;
+        {error, {transport_down, Reason} = _QUICFail} ->
+            inc_counter(Reason),
+            maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
@@ -629,7 +640,7 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
             PubSub =:= sub andalso inc_counter(sub_fail),
             ContinueFn();
         false ->
-            io:format("client(~w): retrying...~n", [N]),
+            inc_counter(connect_retried),
             NOpts = proplists:delete(connection_attempts, Opts),
             connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
     end.
@@ -666,6 +677,11 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(recv),
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
+            ok;
+        {'EXIT', _Client, {shutdown, {transport_down, unreachable}}} ->
+            ok;
+        %% msquic worker overload, tune `max_worker_queue_delay_ms'
+        {'EXIT', _Client, {shutdown, {transport_down, connection_refused}}} ->
             ok;
         {'EXIT', _Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason]);
@@ -1093,3 +1109,21 @@ prepare_for_quic(Opts)->
          true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
          ok
    end.
+
+-spec counters() -> {atom(), integer()}.
+counters() ->
+   Names = [ recv
+           , pub
+           , pub_succ
+           , pub_fail
+           , pub_overrun
+           , sub_fail
+           , sub
+           , connect_succ
+           , connect_fail
+           , unreachable
+           , connection_refused
+           , connection_retried
+           ],
+   Idxs = lists:seq(2, length(Names) + 1),
+   lists:zip(Names, Idxs).
