@@ -34,6 +34,8 @@
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or comma-separated hostnames"},
+         {random_hosts, undefined, "random-hosts", {boolean, false},
+          "Whether to use a random for each client"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -113,6 +115,8 @@
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or comma-separated hostnames"},
+         {random_hosts, undefined, "random-hosts", {boolean, false},
+          "Whether to use a random for each client"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -170,6 +174,8 @@
           "enable distribution port"},
          {host, $h, "host", {string, "localhost"},
           "mqtt server hostname or comma-separated hostnames"},
+         {random_hosts, undefined, "random-hosts", {boolean, false},
+          "Whether to use a random for each client"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -522,8 +528,12 @@ run(Parent, N, PubSub, Opts0, AddrList, HostList) ->
                       end,
             connect_pub(Parent, N, #{}, [{loop_pid, LoopPid} | Opts0], AddrList, HostList);
         _ ->
+            HostFn = case proplists:get_bool(random_hosts, Opts0) of
+                         true -> fun(_N, Xs) -> random(Xs) end;
+                         false -> fun shard_addr/2
+                     end,
             Opts = replace_opts(Opts0, [ {ifaddr, shard_addr(N, AddrList)}
-                                       , {host, shard_addr(N, HostList)}
+                                       , {host, HostFn(N, HostList)}
                                        ]),
             spawn_opt(?MODULE, connect, [Parent, N+proplists:get_value(startnumber, Opts), PubSub, Opts],
                       SpawnOpts),
@@ -557,8 +567,12 @@ connect_pub(Parent, 0, Clients, Opts, _AddrList, _HostList) ->
     end;
 connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
     process_flag(trap_exit, true),
+    HostFn = case proplists:get_bool(random_hosts, Opts00) of
+                 true -> fun(_N, Xs) -> random(Xs) end;
+                 false -> fun shard_addr/2
+             end,
     Opts0 = replace_opts(Opts00, [ {ifaddr, shard_addr(N, AddrList)}
-                                 , {host, shard_addr(N, HostList)}
+                                 , {host, HostFn(N, HostList)}
                                  ]),
     StartNum = proplists:get_value(startnumber, Opts0),
     LoopPid = proplists:get_value(loop_pid, Opts0),
@@ -1281,3 +1295,6 @@ addr_to_list(Input) ->
 shard_addr(N, AddrList) ->
     Offset = N rem length(AddrList),
     lists:nth(Offset + 1, AddrList).
+
+random(Xs) ->
+    lists:nth(rand:uniform(length(Xs)), Xs).
