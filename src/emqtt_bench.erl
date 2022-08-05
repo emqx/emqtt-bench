@@ -180,6 +180,8 @@
           "mqtt server hostname or comma-separated hostnames"},
          {random_hosts, undefined, "random-hosts", {boolean, false},
           "Whether to use a random for each client"},
+         {force_ping, undefined, "force-ping", {boolean, true},
+          "Whether to force a ping to be sent when the time is up"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -700,7 +702,7 @@ connect(Parent, N, PubSub, Opts) ->
         ++ session_property_opts(Opts)
         ++ mqtt_opts(Opts),
     MqttOpts1 = case PubSub of
-                  conn -> [{force_ping, true} | MqttOpts];
+                  conn -> [{force_ping, proplists:get_bool(force_ping, Opts)} | MqttOpts];
                   _ -> MqttOpts
                 end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
