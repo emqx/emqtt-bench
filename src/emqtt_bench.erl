@@ -36,6 +36,8 @@
           "mqtt server hostname or comma-separated hostnames"},
          {random_hosts, undefined, "random-hosts", {boolean, false},
           "Whether to use a random for each client"},
+         {force_ping, undefined, "force-ping", {boolean, false},
+          "Whether to force a ping to be sent when the time is up"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -117,6 +119,8 @@
           "mqtt server hostname or comma-separated hostnames"},
          {random_hosts, undefined, "random-hosts", {boolean, false},
           "Whether to use a random for each client"},
+         {force_ping, undefined, "force-ping", {boolean, false},
+          "Whether to force a ping to be sent when the time is up"},
          {port, $p, "port", {integer, 1883},
           "mqtt server port number"},
          {version, $V, "version", {integer, 5},
@@ -590,6 +594,7 @@ connect_pub(Parent, N, Clients0, Opts00, AddrList, HostList) when N > 0 ->
            | Opts0],
     ClientId = client_id(pub, Seq, Opts),
     MqttOpts = [{clientid, ClientId},
+                {force_ping, proplists:get_bool(force_ping, Opts)},
                 {tcp_opts, tcp_opts(Opts)},
                 {ssl_opts, ssl_opts(Opts)}]
         ++ session_property_opts(Opts)
