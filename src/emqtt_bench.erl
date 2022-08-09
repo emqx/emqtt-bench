@@ -230,16 +230,7 @@
          }
         ]).
 
--define(COUNTERS, 16).
--define(IDX_RECV, 2).
--define(IDX_SUB, 3).
--define(IDX_SUB_FAIL, 4).
--define(IDX_PUB, 5).
--define(IDX_PUB_FAIL, 6).
--define(IDX_PUB_OVERRUN, 7).
--define(IDX_PUB_SUCCESS, 8).
--define(IDX_CONN_SUCCESS, 9).
--define(IDX_CONN_FAIL, 10).
+-define(cnt_map, cnt_map).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -379,20 +370,20 @@ prepare(PubSub, Opts) ->
 
 init() ->
     process_flag(trap_exit, true),
-    CRef = counters:new(?COUNTERS, [write_concurrency]),
-    ok = persistent_term:put(?MODULE, CRef),
     Now = erlang:monotonic_time(millisecond),
+    Counters = counters(),
+    CRef = counters:new(length(Counters)+1, [write_concurrency]),
+    ok = persistent_term:put(?MODULE, CRef),
+    %% init counters
     InitS = {Now, 0},
-    put({stats, recv}, InitS),
-    put({stats, pub}, InitS),
-    put({stats, pub_succ}, InitS),
-    put({stats, pub_fail}, InitS),
-    put({stats, pub_overrun}, InitS),
-    put({stats, sub_fail}, InitS),
-    put({stats, sub}, InitS),
-    put({stats, connect_succ}, InitS),
-    put({stats, connect_fail}, InitS).
-
+    ets:new(?cnt_map, [ named_table
+                      , ordered_set
+                      , protected
+                      , {read_concurrency, true}]),
+    true = ets:insert(?cnt_map, Counters),
+    lists:foreach(fun({C, _Idx}) ->
+                        put({stats, C}, InitS)
+                  end, Counters).
 
 main_loop(Uptime, Count) ->
     receive
@@ -439,7 +430,7 @@ do_print_qoe(Data) ->
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
-        Cnt <- [recv, sub, pub, pub_succ, sub_fail, pub_fail, pub_overrun, connect_succ, connect_fail]],
+        {Cnt, _Idx} <- counters()],
     ok.
 
 print_stats(Uptime, Name) ->
@@ -489,43 +480,13 @@ maybe_feed(ReturnMaybeFeed) ->
 maybe_feed(return, feed) -> io:format("\n");
 maybe_feed(_, _) -> ok.
 
-get_counter(recv) ->
-    counters:get(cnt_ref(), ?IDX_RECV);
-get_counter(sub) ->
-    counters:get(cnt_ref(), ?IDX_SUB);
-get_counter(pub) ->
-    counters:get(cnt_ref(), ?IDX_PUB);
-get_counter(pub_succ) ->
-    counters:get(cnt_ref(), ?IDX_PUB_SUCCESS);
-get_counter(sub_fail) ->
-    counters:get(cnt_ref(), ?IDX_SUB_FAIL);
-get_counter(pub_fail) ->
-    counters:get(cnt_ref(), ?IDX_PUB_FAIL);
-get_counter(pub_overrun) ->
-    counters:get(cnt_ref(), ?IDX_PUB_OVERRUN);
-get_counter(connect_succ) ->
-    counters:get(cnt_ref(), ?IDX_CONN_SUCCESS);
-get_counter(connect_fail) ->
-    counters:get(cnt_ref(), ?IDX_CONN_FAIL).
+get_counter(CntName) ->
+    [{CntName, Idx}] = ets:lookup(?cnt_map, CntName),
+    counters:get(cnt_ref(), Idx).
 
-inc_counter(recv) ->
-    counters:add(cnt_ref(), ?IDX_RECV, 1);
-inc_counter(sub) ->
-    counters:add(cnt_ref(), ?IDX_SUB, 1);
-inc_counter(sub_fail) ->
-    counters:add(cnt_ref(), ?IDX_SUB_FAIL, 1);
-inc_counter(pub) ->
-    counters:add(cnt_ref(), ?IDX_PUB, 1);
-inc_counter(pub_succ) ->
-    counters:add(cnt_ref(), ?IDX_PUB_SUCCESS, 1);
-inc_counter(pub_fail) ->
-    counters:add(cnt_ref(), ?IDX_PUB_FAIL, 1);
-inc_counter(pub_overrun) ->
-    counters:add(cnt_ref(), ?IDX_PUB_OVERRUN, 1);
-inc_counter(connect_succ) ->
-    counters:add(cnt_ref(), ?IDX_CONN_SUCCESS, 1);
-inc_counter(connect_fail) ->
-    counters:add(cnt_ref(), ?IDX_CONN_FAIL, 1).
+inc_counter(CntName) ->
+   [{CntName, Idx}] = ets:lookup(?cnt_map, CntName),
+    counters:add(cnt_ref(), Idx, 1).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -615,6 +576,16 @@ connect(Parent, N, PubSub, Opts) ->
                     PubSub =:= sub andalso inc_counter(sub),
                     loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
             end;
+        {error, {transport_down, Reason} = _QUICFail} when
+            Reason == connection_idle;
+            Reason == connection_refused;
+            Reason == connection_timeout ->
+            inc_counter(Reason),
+            maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
+        {error, {transport_down, _Other = QUICFail}} ->
+            io:format("Error: unknown QUIC transport_down ~p~n", [QUICFail]),
+            inc_counter(connect_fail),
+            {error, QUICFail};
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
@@ -629,7 +600,7 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
             PubSub =:= sub andalso inc_counter(sub_fail),
             ContinueFn();
         false ->
-            io:format("client(~w): retrying...~n", [N]),
+            inc_counter(connect_retried),
             NOpts = proplists:delete(connection_attempts, Opts),
             connect(Parent, N, PubSub, [{connection_attempts, Retries + 1} | NOpts])
     end.
@@ -666,6 +637,11 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(recv),
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
+            ok;
+        {'EXIT', _Client, {shutdown, {transport_down, unreachable}}} ->
+            ok;
+        %% msquic worker overload, tune `max_worker_queue_delay_ms'
+        {'EXIT', _Client, {shutdown, {transport_down, connection_refused}}} ->
             ok;
         {'EXIT', _Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason]);
@@ -1093,3 +1069,23 @@ prepare_for_quic(Opts)->
          true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
          ok
    end.
+
+-spec counters() -> {atom(), integer()}.
+counters() ->
+   Names = [ recv
+           , sub
+           , sub_fail
+           , pub
+           , pub_fail
+           , pub_overrun
+           , pub_succ
+           , connect_succ
+           , connect_fail
+           , unreachable
+           , connection_refused
+           , connection_timeout
+           , connection_idle
+           , connection_retried
+           ],
+   Idxs = lists:seq(2, length(Names) + 1),
+   lists:zip(Names, Idxs).
