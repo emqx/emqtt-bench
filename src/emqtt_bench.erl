@@ -576,9 +576,16 @@ connect(Parent, N, PubSub, Opts) ->
                     PubSub =:= sub andalso inc_counter(sub),
                     loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
             end;
-        {error, {transport_down, Reason} = _QUICFail} ->
+        {error, {transport_down, Reason} = _QUICFail} when
+            Reason == connection_idle;
+            Reason == connection_refused;
+            Reason == connection_timeout ->
             inc_counter(Reason),
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
+        {error, {transport_down, _Other = QUICFail}} ->
+            io:format("Error: unknown QUIC transport_down ~p~n", [QUICFail]),
+            inc_counter(connect_fail),
+            {error, QUICFail};
         {error, Error} ->
             io:format("client(~w): connect error - ~p~n", [N, Error]),
             maybe_retry(Parent, N, PubSub, Opts, ContinueFn)
@@ -1076,6 +1083,8 @@ counters() ->
            , connect_fail
            , unreachable
            , connection_refused
+           , connection_timeout
+           , connection_idle
            , connection_retried
            ],
    Idxs = lists:seq(2, length(Names) + 1),
