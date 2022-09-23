@@ -1,6 +1,9 @@
-# Erlang MQTT Benchmark Tool
+# Lightweight MQTT Benchmark Tool written in Erlang
 
-`emqtt_bench` is a simple MQTT v5.0 benchmark tool written in Erlang.
+![image](https://user-images.githubusercontent.com/164324/191903878-7f675d84-e38f-4aaf-81fa-c691d9ceb28b.png)
+
+
+`eMQTT-Bench` is a lightweight MQTT v5.0 benchmark tool written in Erlang.
 
 You can download pre-built binary packeges from https://github.com/emqx/emqtt-bench/releases.
 
@@ -316,5 +319,5 @@ sudo sysctl -w net.ipv4.ip_local_port_range="1025 65534"
 
 ## Author
 
-EMQ X Team.
+EMQX Team.
 
