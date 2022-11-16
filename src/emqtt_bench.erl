@@ -722,7 +722,7 @@ subscribe(Client, N, Opts) ->
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
     case Res of
        {ok, _, _} ->
-          case proplists:get_value(qoe, emqtt:info(Client)) of
+          case proplists:get_value(qoe, emqtt:info(Client), false) of
              false ->
                 ok;
              #{ initialized := StartTs

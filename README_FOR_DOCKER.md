@@ -153,5 +153,4 @@ You should not set '-c' option more than 60K for TCP ports limit on one interfac
 
 ## Author
 
-EMQ X Team.
-
+EMQX Team.
