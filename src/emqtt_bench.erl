@@ -26,6 +26,25 @@
         , loop/5
         ]).
 
+-define(STARTNUMBER_DESC,
+        "The start point when assigning sequence numbers to clients. "
+        "This is useful when running multiple emqtt-bench "
+        "instances to test the same broker (cluster), so the start number "
+        "can be planned to avoid client ID collision").
+
+-define(PREFIX_DESC,
+        "Client ID prefix. "
+        "If not provided '$HOST_bench_(pub|sub)_$RANDOM_$N' is used, "
+        "where $HOST is either the host name or the IP address provided in the --ifaddr option, "
+        "$RANDOM is a random number and "
+        "$N is the sequence number assigned for each client. "
+        "If provided, the $RANDOM suffix will not be added.").
+
+-define(SHORTIDS_DESC,
+        "Use short client ID. "
+        "If --prefix is provided, the prefix is added otherwise "
+        "client ID is the assigned sequence number.").
+
 -define(PUB_OPTS,
         [{help, undefined, "help", boolean,
           "help information"},
@@ -39,7 +58,7 @@
           "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
-         {startnumber, $n, "startnumber", {integer, 0}, "start number"},
+         {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
          {interval_of_msg, $I, "interval_of_msg", {integer, 1000},
@@ -81,9 +100,8 @@
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "One or multiple (comma-separated) source IP addresses"},
-         {prefix, undefined, "prefix", string, "client id prefix"},
-         {shortids, $s, "shortids", {boolean, false},
-          "use short ids for client ids"},
+         {prefix, undefined, "prefix", string, ?PREFIX_DESC},
+         {shortids, $s, "shortids", {boolean, false}, ?SHORTIDS_DESC},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {inflight, $F,"inflight", {integer, 1},
           "maximum inflight messages for QoS 1 an 2, value 0 for 'infinity'"},
@@ -123,7 +141,7 @@
           "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
-         {startnumber, $n, "startnumber", {integer, 0}, "start number"},
+         {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
          {topic, $t, "topic", string,
@@ -155,9 +173,8 @@
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"},
-         {shortids, $s, "shortids", {boolean, false},
-          "use short ids for client ids"},
+         {prefix, undefined, "prefix", string, ?PREFIX_DESC},
+         {shortids, $s, "shortids", {boolean, false}, ?SHORTIDS_DESC},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
@@ -186,7 +203,7 @@
           "mqtt protocol version: 3 | 4 | 5"},
          {count, $c, "count", {integer, 200},
           "max count of clients"},
-         {startnumber, $n, "startnumber", {integer, 0}, "start number"},
+         {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {qoe, $Q, "qoe", {boolean, false},
           "Enable QoE tracking"},
          {interval, $i, "interval", {integer, 10},
@@ -212,9 +229,8 @@
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
-         {prefix, undefined, "prefix", string, "client id prefix"},
-         {shortids, $s, "shortids", {boolean, false},
-          "use short ids for client ids"},
+         {prefix, undefined, "prefix", string, ?PREFIX_DESC},
+         {shortids, $s, "shortids", {boolean, false}, ?SHORTIDS_DESC},
          {lowmem, $l, "lowmem", boolean, "enable low mem mode, but use more CPU"},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
@@ -859,26 +875,29 @@ connect_fun(Opts)->
     end.
 
 client_id(PubSub, N, Opts) ->
-    Prefix =
+    Prefix = client_id_prefix(PubSub, Opts),
+    iolist_to_binary([Prefix, integer_to_list(N)]).
+
+client_id_prefix(PubSub, Opts) ->
+    case {proplists:get_value(shortids, Opts), proplists:get_value(prefix, Opts)} of
+        {false, P} when P =:= undefined orelse P =:= "" ->
+            Rand = rand:uniform(16#FFFFFFFF),
+            lists:concat([host_prefix(Opts), "_bench_", PubSub, "_", Rand, "_"]);
+        {false, Val} ->
+            lists:concat([Val, "_bench_", PubSub, "_"]);
+        {true, Pref} when Pref =:= undefined orelse Pref =:= "" ->
+            "";
+        {true, Prefix} ->
+            Prefix
+    end.
+
+host_prefix(Opts) ->
     case proplists:get_value(ifaddr, Opts) of
         undefined ->
-            {ok, Host} = inet:gethostname(), Host;
-        IfAddr    ->
+            {ok, Host} = inet:gethostname(),
+            Host;
+        IfAddr ->
             IfAddr
-    end,
-    case { proplists:get_value(shortids, Opts)
-         , proplists:get_value(prefix, Opts)
-         } of
-        {false, undefined} ->
-            list_to_binary(lists:concat([Prefix, "_bench_", atom_to_list(PubSub),
-                                    "_", N, "_", rand:uniform(16#FFFFFFFF)]));
-        {false, Val} ->
-            list_to_binary(lists:concat([Val, "_bench_", atom_to_list(PubSub),
-                                         "_", N]));
-        {true, Pref} when Pref =:= undefined; Pref =:= "" ->
-            integer_to_binary(N);
-        {true, Pref} ->
-            list_to_binary(lists:concat([Pref, "_", N]))
     end.
 
 topics_opt(Opts) ->
