@@ -1,5 +1,5 @@
-REBAR = $(CURDIR)/rebar3
-REBAR_VERSION = 3.14.3-emqx-7
+REBAR ?= $(CURDIR)/rebar3
+REBAR_VERSION ?= 3.14.3-emqx-7
 
 .PHONY: all
 all: release
@@ -32,6 +32,6 @@ docker:
 
 .PHONY: ensure-rebar3
 ensure-rebar3:
-	@$(CURDIR)/scripts/ensure-rebar3.sh $(REBAR_VERSION)
+	$(CURDIR)/scripts/ensure-rebar3.sh $(REBAR_VERSION)
 
 $(REBAR): ensure-rebar3
