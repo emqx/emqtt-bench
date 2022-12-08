@@ -27,9 +27,9 @@ Profiles = {profiles,[ {escript, []}
                                                                 , cowlib
                                                                   | [ quicer || IsQuicSupp ]
                                                                 ] }
-                                , {overlay_vars,[ {runner_root_dir, "$(cd $(dirname $(readlink $0 || echo $0))/..; pwd -P)"}
-                                                , {runner_escript_dir, "$RUNNER_ROOT_DIR/escript"}
-                                                ]}
+                                , {overlay_vars_values, [ {runner_root_dir, "$(cd $(dirname $(readlink $0 || echo $0))/..; pwd -P)"}
+                                                        , {runner_escript_dir, "$RUNNER_ROOT_DIR/escript"}
+                                                        ]}
                                 , {overlay, [ {mkdir, "bin"}
                                             , {mkdir, "escript"}
                                             , {copy, "_build/emqtt_bench/bin", "escript"}

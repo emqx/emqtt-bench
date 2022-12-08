@@ -1,5 +1,5 @@
-REBAR = $(CURDIR)/rebar3
-REBAR_VERSION = 3.14.3-emqx-7
+REBAR ?= $(CURDIR)/rebar3
+REBAR_VERSION ?= 3.14.3-emqx-7
 
 .PHONY: all
 all: release
@@ -8,12 +8,8 @@ release: compile
 	$(REBAR) as emqtt_bench tar
 	@$(CURDIR)/scripts/rename-package.sh
 
-compile: $(REBAR) unlock
+compile: $(REBAR)
 	$(REBAR) compile
-
-.PHONY: unlock
-unlock:
-	$(REBAR) unlock
 
 .PHONY: clean
 clean: distclean
@@ -32,6 +28,6 @@ docker:
 
 .PHONY: ensure-rebar3
 ensure-rebar3:
-	@$(CURDIR)/scripts/ensure-rebar3.sh $(REBAR_VERSION)
+	$(CURDIR)/scripts/ensure-rebar3.sh $(REBAR_VERSION)
 
 $(REBAR): ensure-rebar3
