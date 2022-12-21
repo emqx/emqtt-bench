@@ -69,6 +69,12 @@
           "password for connecting to server"},
          {topic, $t, "topic", string,
           "topic subscribe, support %u, %c, %i, %s variables"},
+         {payload_hdrs, undefined, "payload-hdrs", {string, ""},
+          " If set, add optional payload headers."
+          " cnt64: strict increasing counter(64bit) per publisher"
+          " ts: Timestamp when emit"
+          " example: --payload_hdrs cnt64,ts"
+         },
          {size, $s, "size", {integer, 256},
           "payload size"},
          {message, $m, "message", string,
@@ -146,6 +152,12 @@
           "interval of connecting to the broker"},
          {topic, $t, "topic", string,
           "topic subscribe, support %u, %c, %i variables"},
+         {payload_hdrs, undefined, "payload-hdrs", {string, []},
+          "Handle the payload header from received message. "
+          "Publish side must have the same option enabled in the same order. "
+          "cnt64: Check the counter is strict increasing. "
+          "ts: publish latency counting."
+         },
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
          {qoe, $Q, "qoe", {boolean, false},
@@ -247,6 +259,8 @@
         ]).
 
 -define(cnt_map, cnt_map).
+-define(hdr_cnt64, "cnt64").
+-define(hdr_ts, "ts").
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -345,7 +359,7 @@ start(PubSub, Opts) ->
                    ConnRate ->
                        1000 * NoWorkers div ConnRate
                end,
-
+    PayloadHdrs = parse_payload_hdrs(Opts),
     io:format("Start with ~p workers, addrs pool size: ~p and req interval: ~p ms ~n~n",
               [NoWorkers, NoAddrs, Interval]),
     true = (Interval >= 1),
@@ -358,7 +372,8 @@ start(PubSub, Opts) ->
                                               [{count, CntPerWorker}]
                                       end,
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
-                                                      {interval, Interval}
+                                                      {interval, Interval},
+                                                      {payload_hdrs, PayloadHdrs}
                                                      ] ++ CountParm),
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
                   end, lists:seq(1, NoWorkers)),
@@ -457,9 +472,18 @@ print_stats(Uptime, Name) ->
             Now = erlang:monotonic_time(millisecond),
             Elapsed = Now - LastTS,
             Tdiff = fmt_tdiff(Now - Uptime),
-            Elapsed =/= 0 andalso
-                print("~s ~s total=~w rate=~.2f/sec~n",
-                      [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]),
+            case Name of
+               publish_latency when Elapsed > 0 ->
+                  CurrentRecv = get_counter(recv),
+                  {_, LastRecv} = get({stats, recv}),
+                  Recv = CurrentRecv - LastRecv,
+                  Recv > 0 andalso print("~s ~s avg=~wms~n",
+                                         [Tdiff, Name, (CurVal - LastVal) div Recv]);
+               _ when Elapsed > 0 ->
+                  print("~s ~s total=~w rate=~.2f/sec~n",
+                        [Tdiff, Name, CurVal, (CurVal - LastVal) * 1000/Elapsed]);
+               _ -> skip
+            end,
             put({stats, Name}, {Now, CurVal});
         true -> ok
     end.
@@ -501,8 +525,10 @@ get_counter(CntName) ->
     counters:get(cnt_ref(), Idx).
 
 inc_counter(CntName) ->
+   inc_counter(CntName, 1).
+inc_counter(CntName, Inc) ->
    [{CntName, Idx}] = ets:lookup(?cnt_map, CntName),
-    counters:add(cnt_ref(), Idx, 1).
+   counters:add(cnt_ref(), Idx, Inc).
 
 -compile({inline, [cnt_ref/0]}).
 cnt_ref() -> persistent_term:get(?MODULE).
@@ -649,8 +675,9 @@ loop(Parent, N, Client, PubSub, Opts) ->
                     Parent ! publish_complete,
                     exit(normal)
             end;
-        {publish, _Publish} ->
+        {publish, #{payload := Payload}} ->
             inc_counter(recv),
+            maybe_check_payload_hdrs(Payload, proplists:get_value(payload_hdrs, Opts)),
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
@@ -766,12 +793,18 @@ publish(Client, Opts) ->
     ok = ensure_publish_begin_time(),
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
-    Payload = proplists:get_value(payload, Opts),
-    case emqtt:publish(Client, topic_opt(Opts), Payload, Flags) of
-        ok -> ok;
-        {ok, _} -> ok;
-        {error, Reason} -> {error, Reason}
-    end.
+   Payload = proplists:get_value(payload, Opts),
+   %% prefix dynamic headers.
+   NewPayload = case proplists:get_value(payload_hdrs, Opts, []) of
+                   [] -> Payload;
+                   PayloadHdrs ->
+                      with_payload_headers(PayloadHdrs, Payload)
+                end,
+   case emqtt:publish(Client, topic_opt(Opts), NewPayload, Flags) of
+      ok -> ok;
+      {ok, _} -> ok;
+      {error, Reason} -> {error, Reason}
+   end.
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
@@ -968,6 +1001,7 @@ loop_opts(Opts) ->
     lists:filter(fun({K,__V}) ->
                          lists:member(K, [ interval_of_msg
                                          , payload
+                                         , payload_hdrs
                                          , qos
                                          , retain
                                          , topic
@@ -1091,7 +1125,8 @@ prepare_for_quic(Opts)->
 
 -spec counters() -> {atom(), integer()}.
 counters() ->
-   Names = [ recv
+   Names = [ publish_latency
+           , recv
            , sub
            , sub_fail
            , pub
@@ -1108,3 +1143,59 @@ counters() ->
            ],
    Idxs = lists:seq(2, length(Names) + 1),
    lists:zip(Names, Idxs).
+
+%% @doc Check received payload headers
+-spec maybe_check_payload_hdrs(Payload :: binary(), Hdrs :: [string()]) -> ok.
+maybe_check_payload_hdrs(_Bin, []) ->
+   ok;
+maybe_check_payload_hdrs(<< TS:64/integer, BinL/binary >>, [?hdr_ts | RL]) ->
+   E2ELatency = os:system_time(millisecond) - TS,
+   E2ELatency > 0 andalso inc_counter(publish_latency, E2ELatency),
+   maybe_check_payload_hdrs(BinL, RL);
+maybe_check_payload_hdrs(<< Cnt:64/integer, BinL/binary >>, [?hdr_cnt64 | RL]) ->
+   case put(payload_hdr_cnt64, Cnt) of
+      undefined ->
+         ok;
+      Old when Cnt - 1 == Old ->
+         maybe_check_payload_hdrs(BinL, RL);
+      Old ->
+         throw({err_payload_hdr_cnt64, Old, Cnt})
+   end.
+
+-spec with_payload_headers([string()], binary()) -> binary().
+with_payload_headers([], Bin) ->
+   Bin;
+with_payload_headers(Hdrs, Bin) ->
+   prefix_payload_headers(Hdrs, Bin, []).
+
+prefix_payload_headers([], Bin, HeadersBin) ->
+   iolist_to_binary(lists:reverse([Bin | HeadersBin]));
+prefix_payload_headers([?hdr_ts | T], Bin, AccHeaderBin) ->
+   TsNow = os:system_time(millisecond),
+   prefix_payload_headers(T, Bin, [ << TsNow:64/integer >> | AccHeaderBin ]);
+prefix_payload_headers([?hdr_cnt64 | T], Bin, AccHeaderBin) ->
+   New = case get(payload_hdr_cnt64) of
+            undefined ->
+               0;
+            Cnt ->
+               Cnt + 1
+         end,
+   put(payload_hdr_cnt64, New),
+   prefix_payload_headers(T, Bin, [ << New:64/integer >> | AccHeaderBin ]).
+
+-spec parse_payload_hdrs(proplists:proplist()) -> [string()].
+parse_payload_hdrs(Opts)->
+   Res = string:tokens(proplists:get_value(payload_hdrs, Opts, []), ","),
+   ok = validate_payload_hdrs(Res),
+   Res.
+
+-spec validate_payload_hdrs([string()]) -> ok | no_return().
+validate_payload_hdrs([]) ->
+   ok;
+validate_payload_hdrs([Hdr | T]) ->
+   case lists:member(Hdr, [?hdr_cnt64, ?hdr_ts]) of
+      true ->
+         validate_payload_hdrs(T);
+      false ->
+         error({unsupp_payload_hdr, Hdr})
+   end.
