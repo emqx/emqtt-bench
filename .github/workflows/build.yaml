@@ -98,7 +98,6 @@ jobs:
       - uses: actions/checkout@v1
       - name: prepare
         run: |
-          brew update
           brew install curl zip unzip gnu-sed kerl unixodbc freetds
           echo "/usr/local/bin" >> $GITHUB_PATH
           git config --global credential.helper store

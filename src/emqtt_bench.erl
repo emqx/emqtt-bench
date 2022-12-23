@@ -71,9 +71,9 @@
           "topic subscribe, support %u, %c, %i, %s variables"},
          {payload_hdrs, undefined, "payload-hdrs", {string, ""},
           " If set, add optional payload headers."
-          " cnt64: strict increasing counter(64bit) per publisher"
+          " cnt64: strictly increasing counter(64bit) per publisher"
           " ts: Timestamp when emit"
-          " example: --payload_hdrs cnt64,ts"
+          " example: --payload-hdrs cnt64,ts"
          },
          {size, $s, "size", {integer, 256},
           "payload size"},
@@ -155,7 +155,7 @@
          {payload_hdrs, undefined, "payload-hdrs", {string, []},
           "Handle the payload header from received message. "
           "Publish side must have the same option enabled in the same order. "
-          "cnt64: Check the counter is strict increasing. "
+          "cnt64: Check the counter is strictly increasing. "
           "ts: publish latency counting."
          },
          {qos, $q, "qos", {integer, 0},
