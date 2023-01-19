@@ -315,7 +315,7 @@ main(["sub"|Argv]) ->
 main(["pub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?PUB_OPTS, Argv),
     ok = maybe_help(pub, Opts),
-    ok = check_required_args(pub, [count, topic], Opts),
+    ok = check_required_args(pub, [count], Opts),
     main(pub, Opts);
 
 main(["conn"|Argv]) ->
