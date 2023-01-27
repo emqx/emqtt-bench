@@ -25,6 +25,7 @@ Profiles = {profiles,[ {escript, []}
                                                                 , getopt
                                                                 , cowboy
                                                                 , prometheus
+                                                                , jsx
                                                                   | [ quicer || IsQuicSupp ]
                                                                 ] }
                                 , {overlay_vars_values, [ {runner_root_dir, "$(cd $(dirname $(readlink $0 || echo $0))/..; pwd -P)"}
@@ -34,6 +35,7 @@ Profiles = {profiles,[ {escript, []}
                                             , {mkdir, "escript"}
                                             , {copy, "_build/emqtt_bench/bin", "escript"}
                                             , {copy, "bin/emqtt_bench","bin/emqtt_bench"}
+                                            , {copy, "topic_spec.json", "topic_spec.json"}
                                             , {template,"bin/emqtt_bench","bin/emqtt_bench"}
                                             ]}
                                 , {tar_hooks, [ "scripts/macos-sign-binaries.sh",
