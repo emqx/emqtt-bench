@@ -667,16 +667,17 @@ connect(Parent, N, PubSub, Opts) ->
                   _ -> MqttOpts
                 end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
-    AllOpts  = [ {seq, N}
+    AllOpts0 = [ {seq, N}
                , {client_id, ClientId}
                , {publish_signal_mref, MRef}
                , {pub_start_wait, RandomPubWaitMS}
                | Opts],
+    TopicPayloadRend = render_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
+    AllOpts = replace_opts(AllOpts0, [{topics_payload, TopicPayloadRend}]),
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
-    TopicPayload = proplists:get_value(topics_payload, Opts),
     case ConnRet of
         {ok, _Props} ->
             inc_counter(Prometheus, connect_succ),
@@ -685,12 +686,12 @@ connect(Parent, N, PubSub, Opts) ->
                     conn -> ok;
                     sub -> subscribe(Client, N, AllOpts);
                     pub -> case MRef of
-                              undefined when TopicPayload == undefined ->
+                              undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
                               undefined ->
                                  maps:map(fun(TopicName,  #{name := TopicName}) ->
                                                 erlang:send_after(RandomPubWaitMS, self(), {publish, TopicName})
-                                          end, TopicPayload);
+                                          end, TopicPayloadRend);
                               _ ->
                                    %% send `publish' only when all publishers
                                    %% are in place.
@@ -1454,16 +1455,16 @@ histogram_observe(false, _, _) ->
 histogram_observe(true, Metric, Value) ->
     prometheus_histogram:observe(Metric, Value).
 
--spec parse_topics_payload(proplists:proplist()) -> #{Name :: string() =>  #{name := string(),
-                                                                             interval_ms := non_neg_integer(),
-                                                                             qos := 0 | 1 |_2,
-                                                                             is_inject_ts := boolean(), payload := string()
-                                                                            }}.
-
-
+-spec parse_topics_payload(proplists:proplist()) -> undefined | #{Name :: string() =>  #{name := string(),
+                                                                                         interval_ms := non_neg_integer(),
+                                                                                         qos := 0 | 1 |_2,
+                                                                                         render_field := undefined | binary(),
+                                                                                         is_inject_ts := boolean(), payload := string(),
+                                                                                         payload := map()
+                                                                                        }}.
 parse_topics_payload(Opts) ->
-   case proplists:get_value(topics_payload, Opts, []) of
-      [] -> [];
+   case proplists:get_value(topics_payload, Opts) of
+      undefined -> undefined;
       Filename ->
          {ok, Content} = file:read_file(Filename),
          #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
@@ -1477,18 +1478,37 @@ parse_topics_payload(Opts) ->
          %%    <<"name">> => <<"Topic2">>,
          %%    <<"payload">> =>
          %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}}]}
-
          lists:foldl(fun(#{ <<"name">> := TopicName,
                             <<"inject_timestamp">> := WithTS,
                             <<"interval_ms">> := IntervalMS,
                             <<"QoS">> := QoS,
-                            <<"payload">> := Payload}, Acc) ->
+                            <<"payload">> := Payload} = Spec, Acc) ->
+                           RFieldName = maps:get(<<"render">>, Spec, undefined),
                            Acc#{TopicName =>
                                    #{ name => TopicName
                                     , interval_ms => binary_to_integer(IntervalMS)
                                     , is_inject_ts => WithTS
                                     , qos => QoS
+                                    , render_field => RFieldName
                                     , payload => Payload
                                     }}
                      end, #{} ,TopicSpecs)
    end.
+
+-spec render_payload(TopicsPayload :: undefined | map(), Opts :: proplists:proplist()) -> NewTopicPayload :: undefined | map().
+render_payload(undefined, _Opts) ->
+   undefined;
+render_payload(TopicsMap, Opts) when is_map(TopicsMap) ->
+   maps:map(fun(_K, V) -> do_render_payload(V, Opts) end, TopicsMap).
+
+do_render_payload(#{render_field := undefined} = Spec, _Opts) ->
+   Spec;
+do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts) when is_binary(FieldName) ->
+   Template = maps:get(FieldName, Payload, ""),
+   SRs = [ {<<"%i">>, integer_to_binary(proplists:get_value(seq, Opts))}
+         , {<<"%c">>, proplists:get_value(client_id, Opts)}
+         ],
+   NewVal = lists:foldl(fun({Search, Replace}, Acc) ->
+                              binary:replace(Acc, Search, Replace, [global])
+                        end, Template, SRs),
+   Spec#{payload := Payload#{FieldName := NewVal}}.
