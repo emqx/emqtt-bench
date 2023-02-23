@@ -12,11 +12,13 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "24.3.4.2-1"
+          - "24.3.4.2-2"
         elixir:
           - "1.13.4"
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - uses: docker/setup-qemu-action@v2
       - uses: docker/setup-buildx-action@v2
       - uses: docker/metadata-action@v4
@@ -42,7 +44,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.0-27:${{ matrix.elixir }}-${{ matrix.otp }}-alpine3.15.1
+            FROM=ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-debian11
 
   linux:
     runs-on: ubuntu-latest
@@ -50,35 +52,40 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - "24.3.4.2-1"
+          - "24.3.4.2-2"
         elixir:
           - "1.13.4"
         quic_support:
           - true
           - false
         os:
+          - ubuntu22.04
           - ubuntu20.04
           - ubuntu18.04
           - ubuntu16.04
+          - debian11
           - debian10
           - debian9
+          - el9
           - el8
           - el7
           - amzn2
     container:
-      image: ghcr.io/emqx/emqx-builder/5.0-27:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
+      image: ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - shell: bash
         run: |
           [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
+          git config --global --add safe.directory /__w/emqtt-bench/emqtt-bench
           make
       - if: failure()
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
-      - uses: actions/upload-artifact@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - uses: actions/upload-artifact@v3
         with:
           name: packages
           path: ./*.tar.gz
@@ -91,12 +98,14 @@ jobs:
           - macos-12
           - macos-11
         otp:
-          - "24.3.4.2-1"
+          - "24.3.4.2-2"
 
     runs-on: ${{ matrix.macos }}
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - name: prepare
         run: |
           brew install curl zip unzip gnu-sed kerl unixodbc freetds
@@ -115,15 +124,13 @@ jobs:
           kerl install ${{ matrix.otp }} $HOME/.kerl/${{ matrix.otp }}
       - name: Make
         shell: bash
-        env:
-          BUILD_WITHOUT_QUIC: 1
         run: |
           . $HOME/.kerl/${{ matrix.otp }}/activate
           make
       - if: failure()
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           name: packages
