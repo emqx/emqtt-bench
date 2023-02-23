@@ -80,6 +80,7 @@ jobs:
       - shell: bash
         run: |
           [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
+          git config --global --add safe.directory /__w/emqtt-bench/emqtt-bench
           make
       - if: failure()
         run: cat rebar3.crashdump
