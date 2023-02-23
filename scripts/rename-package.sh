@@ -4,20 +4,28 @@ set -euo pipefail
 
 cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-if [ "$(uname -s)" = 'Darwin' ]; then
-    DIST='macos'
-    VERSION_ID=$(sw_vers | gsed -n '/^ProductVersion:/p' | gsed -r 's/ProductVersion:(.*)/\1/g' | gsed -r 's/([0-9]+).*/\1/g' | gsed 's/^[ \t]*//g')
-    SYSTEM="$(echo "${DIST}${VERSION_ID}" | gsed -r 's/([a-zA-Z]*)-.*/\1/g')"
-elif [ "$(uname -s)" = 'Linux' ]; then
-    if grep -q -i 'centos' /etc/*-release; then
-        DIST='centos'
-        VERSION_ID="$(rpm --eval '%{centos_ver}')"
-    else
-        DIST="$(sed -n '/^ID=/p' /etc/os-release | sed -r 's/ID=(.*)/\1/g' | sed 's/"//g')"
-        VERSION_ID="$(sed -n '/^VERSION_ID=/p' /etc/os-release | sed -r 's/VERSION_ID=(.*)/\1/g' | sed 's/"//g')"
-    fi
-    SYSTEM="$(echo "${DIST}${VERSION_ID}" | sed -r 's/([a-zA-Z]*)-.*/\1/g')"
-fi
+UNAME="$(uname -s)"
+case "$UNAME" in
+    Darwin)
+        DIST='macos'
+        VERSION_ID="$(sw_vers | grep 'ProductVersion' | cut -d':' -f 2 | cut -d'.' -f1 | tr -d ' \t')"
+        SYSTEM="${DIST}${VERSION_ID}"
+        ;;
+    Linux)
+        # /etc/os-release on amazon linux 2 contains both rhel and centos strings
+        if grep -q -i 'amzn' /etc/*-release; then
+            DIST='amzn'
+            VERSION_ID="$(sed -n '/^VERSION_ID=/p' /etc/os-release | sed -r 's/VERSION_ID=(.*)/\1/g' | sed 's/"//g')"
+        elif grep -q -i 'rhel' /etc/*-release; then
+            DIST='el'
+            VERSION_ID="$(rpm --eval '%{rhel}')"
+        else
+            DIST="$(sed -n '/^ID=/p' /etc/os-release | sed -r 's/ID=(.*)/\1/g' | sed 's/"//g')"
+            VERSION_ID="$(sed -n '/^VERSION_ID=/p' /etc/os-release | sed -r 's/VERSION_ID=(.*)/\1/g' | sed 's/"//g')"
+        fi
+        SYSTEM="$(echo "${DIST}${VERSION_ID}" | sed -r 's/([a-zA-Z]*)-.*/\1/g')"
+        ;;
+esac
 
 ARCH="$(uname -m)"
 case "$ARCH" in

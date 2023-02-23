@@ -44,7 +44,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-alpine3.15.1
+            FROM=ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-debian11
 
   linux:
     runs-on: ubuntu-latest
@@ -124,8 +124,6 @@ jobs:
           kerl install ${{ matrix.otp }} $HOME/.kerl/${{ matrix.otp }}
       - name: Make
         shell: bash
-        env:
-          BUILD_WITHOUT_QUIC: 1
         run: |
           . $HOME/.kerl/${{ matrix.otp }}/activate
           make
