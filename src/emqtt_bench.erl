@@ -322,7 +322,11 @@ main(pub, Opts) ->
     Payload = case proplists:get_value(message, Opts) of
                   undefined ->
                     iolist_to_binary([O || O <- lists:duplicate(Size, $a)]);
-                  StrPayload -> StrPayload
+                  "template://" ++ Path ->
+                    {ok, Bin} = file:read_file(Path),
+                    {template, Bin};
+                  StrPayload ->
+                    StrPayload
               end,
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
     PublishSignalPid =
@@ -793,7 +797,14 @@ publish(Client, Opts) ->
     ok = ensure_publish_begin_time(),
     Flags   = [{qos, proplists:get_value(qos, Opts)},
                {retain, proplists:get_value(retain, Opts)}],
-   Payload = proplists:get_value(payload, Opts),
+   Payload0 = proplists:get_value(payload, Opts),
+   Payload = case Payload0 of
+                 {template, Bin} ->
+                     Ts = integer_to_binary(os:system_time(millisecond)),
+                     binary:replace(Bin, <<"%TIMESTAMP%">>, Ts);
+                 _ ->
+                     Payload0
+             end,
    %% prefix dynamic headers.
    NewPayload = case proplists:get_value(payload_hdrs, Opts, []) of
                    [] -> Payload;
@@ -1146,6 +1157,8 @@ counters() ->
 
 %% @doc Check received payload headers
 -spec maybe_check_payload_hdrs(Payload :: binary(), Hdrs :: [string()]) -> ok.
+maybe_check_payload_hdrs({template, _Bin}, _) ->
+    ok;
 maybe_check_payload_hdrs(_Bin, []) ->
    ok;
 maybe_check_payload_hdrs(<< TS:64/integer, BinL/binary >>, [?hdr_ts | RL]) ->
