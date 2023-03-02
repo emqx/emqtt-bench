@@ -369,16 +369,17 @@ start(PubSub, Opts) ->
     true = (Interval >= 1),
     lists:foreach(fun(P) ->
                           StartNumber = proplists:get_value(startnumber, Opts) + CntPerWorker*(P-1),
-                          CountParm = case Rem =/= 0 andalso P == 1 of
-                                          true ->
-                                              [{count, CntPerWorker + Rem}];
-                                          false ->
-                                              [{count, CntPerWorker}]
-                                      end,
+                          Count1 = case Rem =/= 0 andalso P == NoWorkers of
+                                       true ->
+                                           CntPerWorker + Rem;
+                                       false ->
+                                           CntPerWorker
+                                   end,
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
                                                       {interval, Interval},
-                                                      {payload_hdrs, PayloadHdrs}
-                                                     ] ++ CountParm),
+                                                      {payload_hdrs, PayloadHdrs},
+                                                      {count, Count1}
+                                                     ]),
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
                   end, lists:seq(1, NoWorkers)),
     timer:send_interval(1000, stats),
