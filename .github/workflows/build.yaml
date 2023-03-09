@@ -5,6 +5,11 @@ on:
     tags:
       - "*"
       - "!v*"
+  workflow_dispatch:
+    inputs:
+      branch_or_tag:
+        required: false
+
 jobs:
   docker:
     runs-on: ubuntu-latest
@@ -44,7 +49,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-debian11
+            FROM=ghcr.io/emqx/emqx-builder/5.0-31:${{ matrix.elixir }}-${{ matrix.otp }}-debian11
 
   linux:
     runs-on: ubuntu-latest
@@ -71,7 +76,7 @@ jobs:
           - el7
           - amzn2
     container:
-      image: ghcr.io/emqx/emqx-builder/5.0-29:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
+      image: ghcr.io/emqx/emqx-builder/5.0-31:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v3
@@ -80,7 +85,7 @@ jobs:
       - shell: bash
         run: |
           [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
-          git config --global --add safe.directory /__w/emqtt-bench/emqtt-bench
+          git config --global --add safe.directory $(pwd)
           make
       - if: failure()
         run: cat rebar3.crashdump
@@ -163,3 +168,13 @@ jobs:
           repo: emqtt-bench
           path: "packages/emqtt-bench-*"
           token: ${{ github.token }}
+      - uses: aws-actions/configure-aws-credentials@v1-node16
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+      - name: upload to aws s3
+        run: |
+          set -euo pipefail
+          aws s3 cp packages/emqtt-bench-* s3://${{ secrets.AWS_S3_BUCKET }}/emqtt-bench/${{ github.ref_name }}
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.AWS_CLOUDFRONT_ID }} --paths "/emqtt-bench/${{ github.ref_name }}/*"
