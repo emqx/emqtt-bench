@@ -9,6 +9,10 @@ on:
     inputs:
       branch_or_tag:
         required: false
+      publish_release_artifacts:
+        type: boolean
+        required: true
+        default: false
 
 jobs:
   docker:
@@ -23,6 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
+          ref: ${{ github.event.inputs.branch_or_tag }}
           fetch-depth: 0
       - uses: docker/setup-qemu-action@v2
       - uses: docker/setup-buildx-action@v2
@@ -37,7 +42,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - uses: docker/login-action@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts
         with:
           username: ${{ secrets.DOCKER_HUB_USER }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
@@ -45,7 +50,7 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          push: ${{ startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts == true }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
@@ -82,6 +87,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.branch_or_tag }}
       - shell: bash
         run: |
           [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
@@ -111,6 +117,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          ref: ${{ github.event.inputs.branch_or_tag }}
       - name: prepare
         run: |
           brew install curl zip unzip gnu-sed kerl unixodbc freetds
@@ -136,7 +143,7 @@ jobs:
         run: cat rebar3.crashdump
       - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
       - uses: actions/upload-artifact@v3
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts
         with:
           name: packages
           path: ./*.tar.gz
@@ -146,7 +153,7 @@ jobs:
     needs:
       - linux
       - mac
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts
 
     steps:
       - uses: actions/download-artifact@v3
@@ -176,5 +183,5 @@ jobs:
       - name: upload to aws s3
         run: |
           set -euo pipefail
-          aws s3 cp packages/emqtt-bench-* s3://${{ secrets.AWS_S3_BUCKET }}/emqtt-bench/${{ github.ref_name }}
+          aws s3 cp --recursive packages s3://${{ secrets.AWS_S3_BUCKET }}/emqtt-bench/${{ github.ref_name }}
           aws cloudfront create-invalidation --distribution-id ${{ secrets.AWS_CLOUDFRONT_ID }} --paths "/emqtt-bench/${{ github.ref_name }}/*"
