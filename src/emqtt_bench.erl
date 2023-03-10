@@ -801,8 +801,22 @@ publish(Client, Opts) ->
    Payload0 = proplists:get_value(payload, Opts),
    Payload = case Payload0 of
                  {template, Bin} ->
-                     Ts = integer_to_binary(os:system_time(millisecond)),
-                     binary:replace(Bin, <<"%TIMESTAMP%">>, Ts);
+                     Now = os:system_time(nanosecond),
+                     TsNS = integer_to_binary(Now),
+                     TsUS = integer_to_binary(erlang:convert_time_unit(Now, nanosecond, microsecond)),
+                     TsMS = integer_to_binary(erlang:convert_time_unit(Now, nanosecond, millisecond)),
+                     Unique = integer_to_binary(erlang:unique_integer()),
+                     Substitutions =
+                         #{ <<"%TIMESTAMP%">> => TsMS
+                          , <<"%TIMESTAMPMS%">> => TsMS
+                          , <<"%TIMESTAMPUS%">> => TsUS
+                          , <<"%TIMESTAMPNS%">> => TsNS
+                          , <<"%UNIQUE%">> => Unique
+                          },
+                     maps:fold(
+                       fun(Placeholder, Val, Acc) -> binary:replace(Acc, Placeholder, Val) end,
+                       Bin,
+                       Substitutions);
                  _ ->
                      Payload0
              end,
