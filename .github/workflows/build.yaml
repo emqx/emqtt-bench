@@ -185,3 +185,13 @@ jobs:
           set -euo pipefail
           aws s3 cp --recursive packages s3://${{ secrets.AWS_S3_BUCKET }}/emqtt-bench/${{ github.ref_name }}
           aws cloudfront create-invalidation --distribution-id ${{ secrets.AWS_CLOUDFRONT_ID }} --paths "/emqtt-bench/${{ github.ref_name }}/*"
+      - name: update to emqx.io
+        run: |
+          set -eux
+          curl -w %{http_code} \
+               --insecure \
+               -H "Content-Type: application/json" \
+               -H "token: ${{ secrets.EMQX_IO_TOKEN }}" \
+               -X POST \
+               -d "{\"repo\":\"emqx/emqtt-bench\", \"tag\": \"${{ github.ref_name }}\" }" \
+               ${{ secrets.EMQX_IO_RELEASE_API }}
