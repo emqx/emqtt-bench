@@ -326,7 +326,7 @@ main(pub, Opts) ->
                     {ok, Bin} = file:read_file(Path),
                     {template, Bin};
                   StrPayload ->
-                    StrPayload
+                    unicode:characters_to_binary(StrPayload)
               end,
     MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
     PublishSignalPid =
