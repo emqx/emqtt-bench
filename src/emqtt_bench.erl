@@ -199,7 +199,8 @@
           "Control where the log output goes. "
           "console: directly to the console      "
           "null: quietly, don't output any logs."
-         }
+         },
+         {random_topic, $r, "random_topic", string, "random topic subscribe, test/1..N"}
         ]).
 
 -define(CONN_OPTS, [
@@ -265,7 +266,7 @@
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
     ok = maybe_help(sub, Opts),
-    ok = check_required_args(sub, [count, topic], Opts),
+    ok = check_required_args(sub, [count], Opts),
     main(sub, Opts);
 
 main(["pub"|Argv]) ->
@@ -346,7 +347,7 @@ main(conn, Opts) ->
 
 start(PubSub, Opts) ->
     ets:new(qoe_store, [named_table, public, ordered_set]),
-    prepare(PubSub, Opts), init(),
+    prepare(PubSub, Opts), init(Opts),
     IfAddr = proplists:get_value(ifaddr, Opts),
     Host = proplists:get_value(host, Opts),
     Rate = proplists:get_value(conn_rate, Opts),
@@ -404,12 +405,34 @@ prepare(PubSub, Opts) ->
     end,
     application:ensure_all_started(emqtt_bench).
 
-init() ->
+init(Opts) ->
     process_flag(trap_exit, true),
     Now = erlang:monotonic_time(millisecond),
     Counters = counters(),
     CRef = counters:new(length(Counters)+1, [write_concurrency]),
     ok = persistent_term:put(?MODULE, CRef),
+    case proplists:get_value(random_topic, Opts) of
+      undefined -> ok;
+      Rtopic ->
+        Topics = string:tokens(Rtopic, "/"),
+        [First | Tail] = lists:reverse(Topics),
+        case string:tokens(First, "..") of
+          [_] -> ok;
+          [Start, End] ->
+            ets:new(random_topic, [ named_table
+                      , set
+                      , public
+                      , {read_concurrency, true}]),
+            Seq = lists:seq(list_to_integer(Start), list_to_integer(End)),
+            RT1 = lists:foldr(fun(I, Acc) -> [I, "/" | Acc] end, "", Tail),
+            lists:foreach(
+              fun(Index) ->
+                RT2 = lists:concat(RT1) ++ integer_to_list(Index),
+                ets:insert(random_topic, {Index, RT2})
+              end, Seq)
+          end
+    end,
+
     %% init counters
     InitS = {Now, 0},
     ets:new(?cnt_map, [ named_table
@@ -767,7 +790,20 @@ consumer_pub_msg_fun_init(N) when is_integer(N), N > 0 ->
 
 subscribe(Client, N, Opts) ->
     Qos = proplists:get_value(qos, Opts),
-    Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
+    Res = case proplists:get_value(random_topic, Opts) of
+      undefined ->
+        emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]);
+      RTopic ->
+        Topics = string:tokens(RTopic, "/"),
+        [First | _Tail] = lists:reverse(Topics),
+        case string:tokens(First, "..") of
+          [_] -> emqtt:subscribe(Client, [{list_to_binary(RTopic), Qos}]);
+          [_Start, End] ->
+            [{_, Topic}] = ets:lookup(random_topic, rand:uniform(list_to_integer(End))),
+            emqtt:subscribe(Client, [{list_to_binary(Topic), Qos}])
+        end
+    end,
+    
     case Res of
        {ok, _, _} ->
           case proplists:get_value(qoe, emqtt:info(Client), false) of
