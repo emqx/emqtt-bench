@@ -951,13 +951,13 @@ publish(Client, Opts) ->
 
 publish_topic(Client, Topic, #{ name := Topic
                               , qos := QoS
-                              , is_inject_ts := IsTS
+                              , inject_ts := TsUnit
                               , payload := PayloadTemplate
                               }, ClientOpts) ->
    ok = ensure_publish_begin_time(),
-   NewPayload = case IsTS of
-                   true -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(millisecond)};
-                   false -> PayloadTemplate
+   NewPayload = case TsUnit of
+                   false -> PayloadTemplate;
+                   _ -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(TsUnit)}
                 end,
    case emqtt:publish(Client, feed_var(Topic, ClientOpts), jsx:encode(NewPayload), [{qos, QoS}]) of
       ok -> ok;
@@ -1459,7 +1459,7 @@ histogram_observe(true, Metric, Value) ->
                                                                                          interval_ms := non_neg_integer(),
                                                                                          qos := 0 | 1 |_2,
                                                                                          render_field := undefined | binary(),
-                                                                                         is_inject_ts := boolean(), payload := string(),
+                                                                                         inject_ts := false | second | millisecond | microsecond | nanosecond,
                                                                                          payload := map()
                                                                                         }}.
 parse_topics_payload(Opts) ->
@@ -1470,7 +1470,7 @@ parse_topics_payload(Opts) ->
          #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
          %% Example
          %%    #{<<"topics">> =>
-         %% [#{<<"inject_timestamp">> => true,<<"interval_ms">> => <<"1000">>,
+         %% [#{<<"inject_timestamp">> => <<"ms">>,<<"interval_ms">> => <<"1000">>,
          %%    <<"name">> => <<"Topic1">>,
          %%    <<"payload">> =>
          %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}},
@@ -1484,10 +1484,18 @@ parse_topics_payload(Opts) ->
                             <<"QoS">> := QoS,
                             <<"payload">> := Payload} = Spec, Acc) ->
                            RFieldName = maps:get(<<"render">>, Spec, undefined),
+                           TSUnit = case WithTS of
+                                       <<"s">> -> second;
+                                       <<"ms">> -> millisecond;
+                                       <<"us">> -> microsecond;
+                                       <<"ns">> -> nanosecond;
+                                       true -> millisecond;
+                                       false -> false
+                                    end,
                            Acc#{TopicName =>
                                    #{ name => TopicName
                                     , interval_ms => binary_to_integer(IntervalMS)
-                                    , is_inject_ts => WithTS
+                                    , inject_ts => TSUnit
                                     , qos => QoS
                                     , render_field => RFieldName
                                     , payload => Payload

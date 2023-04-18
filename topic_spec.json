@@ -9,7 +9,7 @@
 
         {"name": "Topic2",
          "interval_ms": "100",
-         "inject_timestamp" : true,
+         "inject_timestamp" : "us",
          "QoS": 0,
          "render" : "VIN",
          "payload": {"foo2" : "bar2", "timestamp": "0", "VIN" : "VIN-%i"}
