@@ -1161,11 +1161,11 @@ counters() ->
            , pub_succ
            , connect_succ
            , connect_fail
+           , connect_retried
            , unreachable
            , connection_refused
            , connection_timeout
            , connection_idle
-           , connection_retried
            ],
    Idxs = lists:seq(2, length(Names) + 1),
    lists:zip(Names, Idxs).
