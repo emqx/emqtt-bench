@@ -1031,6 +1031,8 @@ loop_opts(Opts) ->
                                          , qos
                                          , retain
                                          , topic
+                                         , client_id
+                                         , username
                                          , lowmem
                                          , limit_fun
                                          , seq
