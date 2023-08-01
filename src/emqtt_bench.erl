@@ -602,6 +602,7 @@ connect(Parent, N, PubSub, Opts) ->
     ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
     case ConnRet of
         {ok, _Props} ->
+            inc_counter(connect_succ),
             Res =
                 case PubSub of
                     conn -> ok;
@@ -619,7 +620,6 @@ connect(Parent, N, PubSub, Opts) ->
                 {error, _SubscribeError} ->
                     maybe_retry(Parent, N, PubSub, Opts, ContinueFn);
                 _ ->
-                    inc_counter(connect_succ),
                     PubSub =:= sub andalso inc_counter(sub),
                     loop(Parent, N, Client, PubSub, loop_opts(AllOpts))
             end;
