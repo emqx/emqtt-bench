@@ -10,6 +10,7 @@ case "$UNAME" in
         DIST='macos'
         VERSION_ID="$(sw_vers | grep 'ProductVersion' | cut -d':' -f 2 | cut -d'.' -f1 | tr -d ' \t')"
         SYSTEM="${DIST}${VERSION_ID}"
+        EXT='zip'
         ;;
     Linux)
         # /etc/os-release on amazon linux 2 contains both rhel and centos strings
@@ -24,6 +25,7 @@ case "$UNAME" in
             VERSION_ID="$(sed -n '/^VERSION_ID=/p' /etc/os-release | sed -r 's/VERSION_ID=(.*)/\1/g' | sed 's/"//g')"
         fi
         SYSTEM="$(echo "${DIST}${VERSION_ID}" | sed -r 's/([a-zA-Z]*)-.*/\1/g')"
+        EXT='tar.gz'
         ;;
 esac
 
@@ -47,5 +49,5 @@ else
 fi
 
 VSN="$(grep -E ".+vsn.+" _build/emqtt_bench/lib/emqtt_bench/ebin/emqtt_bench.app | cut -d '"' -f2)"
-BASE=$(find ./_build/emqtt_bench/rel/emqtt_bench -name "*.tar.gz" | tail -1)
-cp "$BASE" "./emqtt-bench-${VSN}-${SYSTEM}-${ARCH}${QUIC}.tar.gz"
+BASE=$(find ./_build/emqtt_bench/rel/emqtt_bench -name "*.${EXT}" | tail -1)
+cp "$BASE" "./emqtt-bench-${VSN}-${SYSTEM}-${ARCH}${QUIC}.${EXT}"
