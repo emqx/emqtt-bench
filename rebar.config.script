@@ -11,7 +11,7 @@ IsWin32 = fun() ->
                 win32 =:= element(1, os:type())
           end,
 
-Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.111"}}},
+Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.114"}}},
 
 IsQuicSupp = not (IsCentos6() orelse IsWin32() orelse
                   false =/= os:getenv("BUILD_WITHOUT_QUIC")
@@ -36,6 +36,8 @@ Profiles = {profiles,[ {escript, []}
                                             , {copy, "bin/emqtt_bench","bin/emqtt_bench"}
                                             , {template,"bin/emqtt_bench","bin/emqtt_bench"}
                                             ]}
+                                , {tar_hooks, [ "scripts/macos-sign-binaries.sh",
+                                                "scripts/macos-notarize-package.sh"]}
                                 , {include_src, false}
                                 , {include_erts, true}
                                 , {extended_start_script, false}

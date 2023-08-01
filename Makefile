@@ -1,5 +1,5 @@
 REBAR ?= $(CURDIR)/rebar3
-REBAR_VERSION ?= 3.19.0-emqx-1
+REBAR_VERSION ?= 3.19.0-emqx-5
 
 .PHONY: all
 all: release
