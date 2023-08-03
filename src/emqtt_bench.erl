@@ -333,7 +333,7 @@ main(pub, Opts) ->
                   StrPayload ->
                     unicode:characters_to_binary(StrPayload)
               end,
-    MsgLimit = consumer_pub_msg_fun_init(proplists:get_value(limit, Opts)),
+    MsgLimit = pub_limit_fun_init(proplists:get_value(limit, Opts)),
     PublishSignalPid =
         case proplists:get_value(wait_before_publishing, Opts) of
             true ->
@@ -757,16 +757,21 @@ schedule_next_publish(Interval) ->
     end,
     ok.
 
-consumer_pub_msg_fun_init(0) ->
+pub_limit_fun_init(0) ->
     fun() -> true end;
-consumer_pub_msg_fun_init(N) when is_integer(N), N > 0 ->
+pub_limit_fun_init(N) when is_integer(N), N > 0 ->
     Ref = counters:new(1, []),
     counters:put(Ref, 1, N),
     fun() ->
         case counters:get(Ref, 1) of
-            0 -> false;
+            0 ->
+                false;
+            X when X < 0 ->
+                %% this means PUBLISH overrun the limit option, due to race
+                false;
             _ ->
-                counters:sub(Ref, 1, 1), true
+                counters:sub(Ref, 1, 1),
+                true
         end
     end.
 
