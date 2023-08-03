@@ -131,6 +131,11 @@
           "Control where the log output goes. "
           "console: directly to the console      "
           "null: quietly, don't output any logs."
+         },
+         {retry_interval, undefined, "retry-interval", {integer, 0},
+          "Publisher's resend interval (in seconds) if the expected "
+          "acknowledgement for a inflight packet is not "
+          "received within this interval. Default value 0 means no resend."
          }
         ]).
 
@@ -884,6 +889,8 @@ mqtt_opts([{inflight, InFlight0}|Opts], Acc) ->
                    _ -> InFlight0
                end,
     mqtt_opts(Opts, [{max_inflight, InFlight} | Acc]);
+mqtt_opts([{retry_interval, IntervalSeconds}|Opts], Acc) ->
+    mqtt_opts(Opts, [{retry_interval, IntervalSeconds}|Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
