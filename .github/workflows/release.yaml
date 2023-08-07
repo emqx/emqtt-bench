@@ -143,10 +143,11 @@ jobs:
           KERL_CONFIGURE_OPTIONS: '--disable-hipe --disable-jit'
         run: |
           set -eux
-          if [ ! -d $HOME/.kerl/$OTP ]; then
-            kerl build git https://github.com/emqx/otp.git OTP-$OTP $OTP
-            kerl install $OTP $HOME/.kerl/$OTP
-          fi
+          kerl delete build $OTP || true
+          kerl delete installation $OTP || true
+          rm -rf $HOME/.kerl/$OTP
+          kerl build git https://github.com/emqx/otp.git OTP-$OTP $OTP
+          kerl install $OTP $HOME/.kerl/$OTP
       - name: build
         env:
           OTP: ${{ matrix.otp }}
