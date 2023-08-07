@@ -97,7 +97,14 @@ jobs:
           make
       - if: failure()
         run: cat rebar3.crashdump
-      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
+      - name: Verify that we have working release
+        run: |
+          set -e
+          mkdir test-release
+          cp ./emqtt-bench*.tar.gz test-release
+          cd test-release
+          tar xfz ./emqtt-bench*.tar.gz
+          bin/emqtt_bench
       - uses: actions/upload-artifact@v3
         with:
           name: packages
@@ -154,7 +161,14 @@ jobs:
           make
       - if: failure()
         run: cat rebar3.crashdump
-      - run: ./_build/emqtt_bench/rel/emqtt_bench/bin/emqtt_bench
+      - name: Verify that we have working release
+        run: |
+          set -e
+          mkdir test-release
+          cp ./emqtt-bench*.zip test-release
+          cd test-release
+          unzip -q ./emqtt-bench*.zip
+          bin/emqtt_bench
       - uses: actions/upload-artifact@v3
         if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts
         with:
