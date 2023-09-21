@@ -687,7 +687,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
             end;
         {publish, #{payload := Payload}} ->
             inc_counter(recv),
-            maybe_check_payload_hdrs(Payload, proplists:get_value(payload_hdrs, Opts)),
+            maybe_check_payload_hdrs(Payload, proplists:get_value(payload_hdrs, Opts, [])),
             loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
