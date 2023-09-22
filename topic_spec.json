@@ -1,0 +1,18 @@
+{
+    "topics" : [
+        {"name": "Topic1",
+         "interval_ms": "1000",
+         "inject_timestamp" : true,
+         "QoS": 1,
+         "payload": {"foo1" : "bar1", "timestamp": "0"}
+        },
+
+        {"name": "Topic2",
+         "interval_ms": "100",
+         "inject_timestamp" : "us",
+         "QoS": 0,
+         "render" : "VIN",
+         "payload": {"foo2" : "bar2", "timestamp": "0", "VIN" : "VIN-%i"}
+        }
+    ]
+}

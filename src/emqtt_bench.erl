@@ -79,6 +79,8 @@
           "payload size"},
          {message, $m, "message", string,
           "set the message content for publish"},
+         {topics_payload, undefined, "topics-payload", string,
+          "json file defines topics and payloads"},
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
          {qoe, $Q, "qoe", {boolean, false},
@@ -276,7 +278,7 @@ main(["sub"|Argv]) ->
 main(["pub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?PUB_OPTS, Argv),
     ok = maybe_help(pub, Opts),
-    ok = check_required_args(pub, [count, topic], Opts),
+    ok = check_required_args(pub, [count], Opts),
     main(pub, Opts);
 
 main(["conn"|Argv]) ->
@@ -369,6 +371,7 @@ start(PubSub, Opts) ->
                        1000 * NoWorkers div ConnRate
                end,
     PayloadHdrs = parse_payload_hdrs(Opts),
+    TopicPayload = parse_topics_payload(Opts),
     io:format("Start with ~p workers, addrs pool size: ~p and req interval: ~p ms ~n~n",
               [NoWorkers, NoAddrs, Interval]),
     true = (Interval >= 1),
@@ -383,6 +386,7 @@ start(PubSub, Opts) ->
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
                                                       {interval, Interval},
                                                       {payload_hdrs, PayloadHdrs},
+                                                      {topics_payload, TopicPayload},
                                                       {count, Count1}
                                                      ]),
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts, AddrList, HostList])
@@ -596,11 +600,13 @@ connect(Parent, N, PubSub, Opts) ->
                   _ -> MqttOpts
                 end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
-    AllOpts  = [ {seq, N}
+    AllOpts0 = [ {seq, N}
                , {client_id, ClientId}
                , {publish_signal_mref, MRef}
                , {pub_start_wait, RandomPubWaitMS}
                | Opts],
+    TopicPayloadRend = render_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
+    AllOpts = replace_opts(AllOpts0, [{topics_payload, TopicPayloadRend}]),
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
@@ -613,9 +619,13 @@ connect(Parent, N, PubSub, Opts) ->
                     conn -> ok;
                     sub -> subscribe(Client, N, AllOpts);
                     pub -> case MRef of
-                               undefined ->
+                              undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
-                               _ ->
+                              undefined ->
+                                 maps:map(fun(TopicName,  #{name := TopicName}) ->
+                                                erlang:send_after(RandomPubWaitMS, self(), {publish, TopicName})
+                                          end, TopicPayloadRend);
+                              _ ->
                                    %% send `publish' only when all publishers
                                    %% are in place.
                                    ok
@@ -689,6 +699,19 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(recv),
             maybe_check_payload_hdrs(Payload, proplists:get_value(payload_hdrs, Opts, [])),
             loop(Parent, N, Client, PubSub, Opts);
+        {publish, TopicName} = Trigger when is_binary(TopicName) ->
+            TopicSpec = maps:get(TopicName, proplists:get_value(topics_payload, Opts)),
+            case publish_topic(Client, TopicName, TopicSpec, Opts) of
+               ok ->
+                  inc_counter(pub),
+                  %% Perfer not to schedule with back pressure
+                  erlang:send_after(maps:get(interval_ms, TopicSpec), self(), Trigger),
+                  ok;
+               _ ->
+                  Parent ! publish_complete,
+                  exit(normal)
+            end,
+            loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
         {'EXIT', _Client, {shutdown, {transport_down, unreachable}}} ->
@@ -745,6 +768,9 @@ bump_publish_attempt_counter() ->
     NewCount.
 
 schedule_next_publish(Interval) ->
+   schedule_next_publish(Interval, publish).
+
+schedule_next_publish(Interval, Trigger) ->
     PubAttempted = bump_publish_attempt_counter(),
     BeginTime = get_publish_begin_time(),
     NextTime = BeginTime + PubAttempted * Interval,
@@ -752,8 +778,8 @@ schedule_next_publish(Interval) ->
     Remain = NextTime - NowT,
     Interval > 0 andalso Remain < 0 andalso inc_counter(pub_overrun),
     case Remain > 0 of
-        true -> _ = erlang:send_after(Remain, self(), publish);
-        false -> self() ! publish
+        true -> _ = erlang:send_after(Remain, self(), Trigger);
+        false -> self() ! Trigger
     end,
     ok.
 
@@ -841,6 +867,24 @@ publish(Client, Opts) ->
       {ok, _} -> ok;
       {error, Reason} -> {error, Reason}
    end.
+
+
+publish_topic(Client, Topic, #{ name := Topic
+                              , qos := QoS
+                              , inject_ts := TsUnit
+                              , payload := PayloadTemplate
+                              }, ClientOpts) ->
+   ok = ensure_publish_begin_time(),
+   NewPayload = case TsUnit of
+                   false -> PayloadTemplate;
+                   _ -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(TsUnit)}
+                end,
+   case emqtt:publish(Client, feed_var(Topic, ClientOpts), jsx:encode(NewPayload), [{qos, QoS}]) of
+      ok -> ok;
+      {ok, _} -> ok;
+      {error, Reason} -> {error, Reason}
+   end.
+
 
 session_property_opts(Opts) ->
     case session_property_opts(Opts, #{}) of
@@ -1040,6 +1084,7 @@ loop_opts(Opts) ->
                          lists:member(K, [ interval_of_msg
                                          , payload
                                          , payload_hdrs
+                                         , topics_payload
                                          , qos
                                          , retain
                                          , topic
@@ -1241,3 +1286,70 @@ validate_payload_hdrs([Hdr | T]) ->
       false ->
          error({unsupp_payload_hdr, Hdr})
    end.
+
+
+-spec parse_topics_payload(proplists:proplist()) -> undefined | #{Name :: string() =>  #{name := string(),
+                                                                                         interval_ms := non_neg_integer(),
+                                                                                         qos := 0 | 1 |_2,
+                                                                                         render_field := undefined | binary(),
+                                                                                         inject_ts := false | second | millisecond | microsecond | nanosecond,
+                                                                                         payload := map()
+                                                                                        }}.
+parse_topics_payload(Opts) ->
+   case proplists:get_value(topics_payload, Opts) of
+      undefined -> undefined;
+      Filename ->
+         {ok, Content} = file:read_file(Filename),
+         #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
+         %% Example
+         %%    #{<<"topics">> =>
+         %% [#{<<"inject_timestamp">> => <<"ms">>,<<"interval_ms">> => <<"1000">>,
+         %%    <<"name">> => <<"Topic1">>,
+         %%    <<"payload">> =>
+         %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}},
+         %%  #{<<"inject_timestamp">> => true,<<"interval_ms">> => <<"500">>,
+         %%    <<"name">> => <<"Topic2">>,
+         %%    <<"payload">> =>
+         %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}}]}
+         lists:foldl(fun(#{ <<"name">> := TopicName,
+                            <<"inject_timestamp">> := WithTS,
+                            <<"interval_ms">> := IntervalMS,
+                            <<"QoS">> := QoS,
+                            <<"payload">> := Payload} = Spec, Acc) ->
+                           RFieldName = maps:get(<<"render">>, Spec, undefined),
+                           TSUnit = case WithTS of
+                                       <<"s">> -> second;
+                                       <<"ms">> -> millisecond;
+                                       <<"us">> -> microsecond;
+                                       <<"ns">> -> nanosecond;
+                                       true -> millisecond;
+                                       false -> false
+                                    end,
+                           Acc#{TopicName =>
+                                   #{ name => TopicName
+                                    , interval_ms => binary_to_integer(IntervalMS)
+                                    , inject_ts => TSUnit
+                                    , qos => QoS
+                                    , render_field => RFieldName
+                                    , payload => Payload
+                                    }}
+                     end, #{} ,TopicSpecs)
+   end.
+
+-spec render_payload(TopicsPayload :: undefined | map(), Opts :: proplists:proplist()) -> NewTopicPayload :: undefined | map().
+render_payload(undefined, _Opts) ->
+   undefined;
+render_payload(TopicsMap, Opts) when is_map(TopicsMap) ->
+   maps:map(fun(_K, V) -> do_render_payload(V, Opts) end, TopicsMap).
+
+do_render_payload(#{render_field := undefined} = Spec, _Opts) ->
+   Spec;
+do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts) when is_binary(FieldName) ->
+   Template = maps:get(FieldName, Payload, ""),
+   SRs = [ {<<"%i">>, integer_to_binary(proplists:get_value(seq, Opts))}
+         , {<<"%c">>, proplists:get_value(client_id, Opts)}
+         ],
+   NewVal = lists:foldl(fun({Search, Replace}, Acc) ->
+                              binary:replace(Acc, Search, Replace, [global])
+                        end, Template, SRs),
+   Spec#{payload := Payload#{FieldName := NewVal}}.
