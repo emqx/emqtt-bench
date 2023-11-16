@@ -89,6 +89,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
+         {reconnect, undefined, "reconnect", {integer, 0},
+          "max retries of reconnects. 0: disabled"},
          {expiry, $x, "session-expiry", {integer, 0},
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {limit, $L, "limit", {integer, 0},
@@ -175,6 +177,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean start"},
+         {reconnect, undefined, "reconnect", {integer, 0},
+          "max retries of reconnects. 0: disabled"},
          {expiry, $x, "session-expiry", {integer, 0},
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
@@ -233,6 +237,8 @@
           "keep alive in seconds"},
          {clean, $C, "clean", {boolean, true},
           "clean session"},
+         {reconnect, undefined, "reconnect", {integer, 0},
+          "max retries of reconnects. 0: disabled"},
          {expiry, $x, "session-expiry", {integer, 0},
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
@@ -705,6 +711,11 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {disconnected, ReasonCode, _Meta} ->
             io:format("client(~w): disconnected with reason ~w: ~p~n",
                       [N, ReasonCode, emqtt:reason_code_name(ReasonCode)]);
+        {connected, _Props} ->
+            inc_counter(reconnect_succ),
+            IsSessionPresent = (1 == proplists:get_value(session_present, emqtt:info(Client))),
+            PubSub =:= sub andalso not IsSessionPresent andalso subscribe(Client, N, Opts),
+            loop(Parent, N, Client, PubSub, Opts);
         Other ->
             io:format("client(~w): discarded unknown message ~p~n", [N, Other]),
             loop(Parent, N, Client, PubSub, Opts)
@@ -896,6 +907,8 @@ mqtt_opts([{inflight, InFlight0}|Opts], Acc) ->
     mqtt_opts(Opts, [{max_inflight, InFlight} | Acc]);
 mqtt_opts([{retry_interval, IntervalSeconds}|Opts], Acc) ->
     mqtt_opts(Opts, [{retry_interval, IntervalSeconds}|Acc]);
+mqtt_opts([{reconnect, Reconnect}|Opts], Acc) ->
+   mqtt_opts(Opts, [{reconnect, Reconnect}|Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
 
@@ -1176,6 +1189,7 @@ counters() ->
            , connect_succ
            , connect_fail
            , connect_retried
+           , reconnect_succ
            , unreachable
            , connection_refused
            , connection_timeout
