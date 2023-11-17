@@ -714,6 +714,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {connected, _Props} ->
             inc_counter(reconnect_succ),
             IsSessionPresent = (1 == proplists:get_value(session_present, emqtt:info(Client))),
+            %% @TODO here we do not really check the subscribe
             PubSub =:= sub andalso not IsSessionPresent andalso subscribe(Client, N, Opts),
             loop(Parent, N, Client, PubSub, Opts);
         Other ->
@@ -807,9 +808,8 @@ subscribe(Client, N, Opts) ->
                                              }),
                 ok
           end;
-        {error, Reason} ->
-            io:format("client(~w): subscribe error - ~p~n", [N, Reason]),
-            emqtt:disconnect(Client, ?RC_UNSPECIFIED_ERROR)
+        {error, Reason}->
+            io:format("client(~w): subscribe error - ~p~n", [N, Reason])
     end,
     Res.
 
