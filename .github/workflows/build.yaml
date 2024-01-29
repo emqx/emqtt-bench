@@ -13,12 +13,12 @@ jobs:
         elixir:
           - 1.15.7
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
-      - uses: docker/setup-qemu-action@v2
-      - uses: docker/setup-buildx-action@v2
-      - uses: docker/metadata-action@v4
+      - uses: docker/setup-qemu-action@68827325e0b33c7199eb31dd4e31fbe9023e06e3 # v3.0.0
+      - uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226 # v3.0.0
+      - uses: docker/metadata-action@dbef88086f6cef02e264edb7dbf63250c17cef6c # v5.5.0
         id: meta
         with:
           images: ${{ github.repository }}
@@ -26,12 +26,12 @@ jobs:
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-      - uses: docker/login-action@v2
+      - uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d # v3.0.0
         if: startsWith(github.ref, 'refs/tags/') || inputs.publish_release_artifacts
         with:
           username: ${{ secrets.DOCKER_HUB_USER }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
-      - uses: docker/build-push-action@v3
+      - uses: docker/build-push-action@4a13e500e55cf31b7a5d59a38ab2040ab0f42f56 # v5.1.0
         with:
           context: .
           platforms: linux/amd64
@@ -60,7 +60,7 @@ jobs:
       image: ghcr.io/emqx/emqx-builder/5.2-7:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
       - shell: bash
@@ -78,9 +78,9 @@ jobs:
           cd test-release
           tar xfz ./emqtt-bench*.tar.gz
           bin/emqtt_bench
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: packages
+          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}"
           path: ./*.tar.gz
 
   mac:
@@ -89,15 +89,13 @@ jobs:
       matrix:
         macos:
           - macos-12-arm64
-          - macos-12
-          - macos-13
         otp:
           - 25.3.2-2
 
     runs-on: ${{ matrix.macos }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
       - name: prepare
@@ -105,7 +103,7 @@ jobs:
           brew install curl zip unzip gnu-sed kerl unixodbc freetds
           echo "/usr/local/bin" >> $GITHUB_PATH
           git config --global credential.helper store
-      - uses: actions/cache@v3
+      - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
         id: cache
         with:
           path: ~/.kerl
@@ -145,7 +143,7 @@ jobs:
           cd test-release
           unzip -q ./emqtt-bench*.zip
           bin/emqtt_bench
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: packages
+          name: "emqtt-bench-${{ matrix.macos }}-${{ matrix.otp }}"
           path: ./*.zip
