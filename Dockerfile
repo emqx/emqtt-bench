@@ -1,4 +1,4 @@
-ARG FROM=ghcr.io/emqx/emqx-builder/5.2-7:1.15.7-25.3.2-2-debian11
+ARG FROM=ghcr.io/emqx/emqx-builder/5.3-7:1.15.7-26.2.5-1-debian12
 FROM ${FROM}
 COPY . /emqtt_bench
 WORKDIR /emqtt_bench

@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - 25.3.2-2
+          - 26.2.5-1
         elixir:
           - 1.15.7
     steps:
@@ -52,7 +52,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.2-7:${{ matrix.elixir }}-${{ matrix.otp }}-debian11
+            FROM=ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
 
   linux:
     runs-on: ubuntu-latest
@@ -60,7 +60,7 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - 25.3.2-2
+          - 26.2.5-1
         elixir:
           - 1.15.7
         quic_support:
@@ -76,7 +76,7 @@ jobs:
           - amzn2
           - amzn2023
     container:
-      image: ghcr.io/emqx/emqx-builder/5.2-7:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
+      image: ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -108,11 +108,10 @@ jobs:
       fail-fast: false
       matrix:
         macos:
-          - macos-12-arm64
-          - macos-12
           - macos-13
+          - macos-14
         otp:
-          - 25.3.2-2
+          - 26.2.5-1
 
     runs-on: ${{ matrix.macos }}
 
