@@ -2,10 +2,24 @@
 
 set -euo pipefail
 
-VERSION="$1"
+[ "${DEBUG:-0}" -eq 1 ] && set -x
 
 # ensure dir
 cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+
+OTP_VSN=$(erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().')
+case ${OTP_VSN} in
+    25*)
+        VERSION="3.19.0-emqx-9"
+        ;;
+    26*)
+        VERSION="3.20.0-emqx-1"
+        ;;
+    *)
+        echo "Unsupported Erlang/OTP version $OTP_VSN"
+        exit 1
+        ;;
+esac
 
 DOWNLOAD_URL='https://github.com/emqx/rebar3/releases/download'
 
