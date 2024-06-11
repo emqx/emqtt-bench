@@ -75,29 +75,43 @@ jobs:
           - el8
           - amzn2
           - amzn2023
-    container:
-      image: ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
+    env:
+      IMAGE: ghcr.io/emqx/emqx-builder/5.3-7:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
+      BUILD_WITHOUT_QUIC: ${{ matrix.quic_support == 'false' && '1' || '' }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
           ref: ${{ github.event.inputs.branch_or_tag }}
-      - shell: bash
-        run: |
-          [ "false" == ${{ matrix.quic_support }} ] && export BUILD_WITHOUT_QUIC=1
-          git config --global --add safe.directory $(pwd)
+      - name: build
+        run: >-
+          docker run --rm -v ${PWD}:/wd -w /wd -e BUILD_WITHOUT_QUIC=${BUILD_WITHOUT_QUIC} ${IMAGE} bash -euc "
+          git config --global --add safe.directory '*';
           make
+          "
       - if: failure()
         run: cat rebar3.crashdump
       - name: Verify that we have working release
         run: |
-          set -e
-          mkdir test-release
-          cp ./emqtt-bench*.tar.gz test-release
-          cd test-release
+          mkdir test-package
+          cp *.tar.gz test-package/
+          pushd test-package
           tar xfz ./emqtt-bench*.tar.gz
-          bin/emqtt_bench
+          docker network create emqtt-bench
+          docker run -d --name emqx --network emqtt-bench -p 18083:18083 emqx/emqx:latest
+          attempts=10
+          url="http://localhost:18083/status"
+          while ! curl "$url" >/dev/null 2>&1; do
+              if [ $attempts -eq 0 ]; then
+                  echo "emqx is not responding on $url"
+                  exit 1
+              fi
+              sleep 5
+              attempts=$((attempts-1))
+          done
+          docker run -t --rm -v $(pwd):/emqtt-bench -w /emqtt-bench --network emqtt-bench $IMAGE bash -c 'bin/emqtt_bench pub -c 1 -t bench/%i -s 256 -h emqx --limit 5'
+          popd
       - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}"
