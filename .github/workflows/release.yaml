@@ -77,7 +77,7 @@ jobs:
           - amzn2023
     env:
       IMAGE: ghcr.io/emqx/emqx-builder/5.3-7:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
-      BUILD_WITHOUT_QUIC: ${{ matrix.quic_support == 'false' && '1' || '' }}
+      BUILD_WITHOUT_QUIC: ${{ matrix.quic_support && '' || '1' }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -198,20 +198,13 @@ jobs:
           path: packages
           merge-multiple: true
       - name: Create Release
-        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e # v1.1.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@69320dbe05506a9a39fc8ae11030b214ec2d1f87 # v2.0.5
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Emqtt Bench ${{ github.ref }} Released
-          body: Emqtt Bench ${{ github.ref }} Released
+          name: Emqtt Bench ${{ github.ref_name }} Released
+          body: Emqtt Bench ${{ github.ref_name }} Released
+          files: packages/*
           draft: false
           prerelease: false
-      - uses: Rory-Z/upload-release-asset@v1
-        with:
-          repo: emqtt-bench
-          path: "packages/emqtt-bench-*"
-          token: ${{ github.token }}
       - uses: aws-actions/configure-aws-credentials@010d0da01d0b5a38af31e9c3470dbfdabdecca3a # v4.0.1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}

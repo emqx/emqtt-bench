@@ -42,7 +42,7 @@ case "$ARCH" in
         ;;
 esac
 
-if [ -z ${BUILD_WITHOUT_QUIC+x} ]; then
+if [ -z "${BUILD_WITHOUT_QUIC:-}" ]; then
     QUIC="-quic";
 else
     QUIC=""
