@@ -140,7 +140,7 @@
           "console: directly to the console      "
           "null: quietly, don't output any logs."
          },
-         {retry_interval, undefined, "retry-interval", {integer, 0},
+         {retry_interval, 0, "retry-interval", {integer, 0},
           "Publisher's resend interval (in seconds) if the expected "
           "acknowledgement for a inflight packet is not "
           "received within this interval. Default value 0 means no resend."
