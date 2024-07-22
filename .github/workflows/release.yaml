@@ -77,7 +77,6 @@ jobs:
           - amzn2023
     env:
       IMAGE: ghcr.io/emqx/emqx-builder/5.3-7:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
-      BUILD_WITHOUT_QUIC: ${{ matrix.quic_support && '' || '1' }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -86,10 +85,11 @@ jobs:
           ref: ${{ github.event.inputs.branch_or_tag }}
       - name: build
         run: >-
-          docker run --rm -v ${PWD}:/wd -w /wd -e BUILD_WITHOUT_QUIC=${BUILD_WITHOUT_QUIC} ${IMAGE} bash -euc "
-          git config --global --add safe.directory '*';
-          make
-          "
+          if [ "false" == ${{ matrix.quic_support }} ]; then
+            docker run --rm -v ${PWD}:/wd -w /wd -e BUILD_WITHOUT_QUIC=1 ${IMAGE} bash -euc "git config --global --add safe.directory '*' && make"
+          else
+            docker run --rm -v ${PWD}:/wd -w /wd ${IMAGE} bash -euc "git config --global --add safe.directory '*' && make"
+          fi
       - if: failure()
         run: cat rebar3.crashdump
       - name: Verify that we have working release
