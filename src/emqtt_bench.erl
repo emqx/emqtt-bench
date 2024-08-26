@@ -385,7 +385,7 @@ start(PubSub, Opts) ->
               [NoWorkers, NoAddrs, Interval]),
     true = (Interval >= 1),
     PublishSignalPid =
-        case proplists:get_value(wait_before_publishing, Opts) of
+        case proplists:get_bool(wait_before_publishing, Opts) of
             true ->
                 spawn(fun() ->
                           collect_go_signals(NoWorkers),
