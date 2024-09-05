@@ -56,6 +56,8 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]]
                         [-R [<conn_rate>]]
                         [--force-major-gc-interval [<force_major_gc_interval>]]
                         [--log_to [<log_to>]]
+                        [--prometheus]
+                        [--restapi <ip>:<port> | <port>]
 
   --help                     help information
   -d, --dist                 enable distribution port
@@ -98,7 +100,14 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]]
   --log_to                   Control where the log output goes. console: 
                              directly to the console      null: quietly, 
                              don't output any logs. [default: console]
-
+  --prometheus               Enable metrics collection via Prometheus.
+                             Usually used with --restapi to enable
+                             scraping endpoint.
+  --restapi                  Enable REST API for monitoring and control. 
+                             For now only serves /metrics. 
+                             Can be set to IP:Port to listen on a specific IP and Port,
+                             or just Port to listen on all interfaces on
+                             that port. [default: disabled]
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
@@ -118,6 +127,8 @@ Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                        [--load-qst <nst_dets_file>] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]] [-l <lowmem>]
                        [--num-retry-connect [<num_retry_connect>]] [-R [<conn_rate>]]
                        [--force-major-gc-interval [<force_major_gc_interval>]] [--log_to [<log_to>]]
+                       [--prometheus]
+                       [--restapi <ip>:<port> | <port>]
 
   --help                     help information
   -d, --dist                 enable distribution port
@@ -161,6 +172,14 @@ Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                              0]
   --log_to                   Control where the log output goes. console: directly to the console      null: quietly, don't 
                              output any logs. [default: console]
+  --prometheus               Enable metrics collection via Prometheus.
+                             Usually used with --restapi to enable
+                             scraping endpoint.
+  --restapi                  Enable REST API for monitoring and control. 
+                             For now only serves /metrics. 
+                             Can be set to IP:Port to listen on a specific IP and Port,
+                             or just Port to listen on all interfaces on
+                             that port. [default: disabled]
 ```
 
 For example, create 50K concurrent connections at the arrival rate of 100/sec:
@@ -181,6 +200,8 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                        [-F [<inflight>]] [-w [<wait_before_publishing>]] [--max-random-wait [<max_random_wait>]]
                        [--min-random-wait [<min_random_wait>]] [--num-retry-connect [<num_retry_connect>]]
                        [-R [<conn_rate>]] [--force-major-gc-interval [<force_major_gc_interval>]] [--log_to [<log_to>]]
+                       [--prometheus]
+                       [--restapi <ip>:<port> | <port>]
 
   --help                        help information
   -d, --dist                    enable distribution port
@@ -235,6 +256,14 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                                 [default: 0]
   --log_to                      Control where the log output goes. console: directly to the console      null: quietly, 
                                 don't output any logs. [default: console]
+  --prometheus                  Enable metrics collection via Prometheus.
+                                Usually used with --restapi to enable
+                                scraping endpoint.
+  --restapi                     Enable REST API for monitoring and control. 
+                                For now only serves /metrics. 
+                                Can be set to IP:Port to listen on a specific IP and Port,
+                                or just Port to listen on all interfaces on
+                                that port. [default: disabled]
 ```
 
 For example, create 100 connections and each publishes messages at the rate of 100 msg/sec.
