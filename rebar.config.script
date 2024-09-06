@@ -23,8 +23,8 @@ Profiles = {profiles,[ {escript, []}
                                                                 , stdlib
                                                                 , emqtt
                                                                 , getopt
-                                                                , gun
-                                                                , cowlib
+                                                                , cowboy
+                                                                , prometheus
                                                                   | [ quicer || IsQuicSupp ]
                                                                 ] }
                                 , {overlay_vars_values, [ {runner_root_dir, "$(cd $(dirname $(readlink $0 || echo $0))/..; pwd -P)"}
