@@ -96,7 +96,7 @@
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          %% == MQTT layer ==
          {username, $u, "username", string,
-          "username for connecting to server"},
+          "username for connecting to server, support %i, %(i/2), %(rand(100)) variables"},
          {password, $P, "password", string,
           "password for connecting to server"},
          {keepalive, $k, "keepalive", {integer, 300},
@@ -535,6 +535,7 @@ run(Parent, I, N, PubSub, Opts0, AddrList, HostList) ->
     run(Parent, I + 1, N, PubSub, Opts0, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
+    _ = erlang:put(conn_id, N),
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
     Prometheus = lists:member(prometheus, Opts),
@@ -917,8 +918,9 @@ mqtt_opts([{version, 4}|Opts], Acc) ->
     mqtt_opts(Opts, [{proto_ver, v4}|Acc]);
 mqtt_opts([{version, 5}|Opts], Acc) ->
     mqtt_opts(Opts, [{proto_ver, v5}|Acc]);
-mqtt_opts([{username, Username}|Opts], Acc) ->
-    mqtt_opts(Opts, [{username, list_to_binary(Username)}|Acc]);
+mqtt_opts([{username, Username0}|Opts], Acc) ->
+    Username = parse_expr(Username0),
+    mqtt_opts(Opts, [{username, bin(Username)}|Acc]);
 mqtt_opts([{password, Password}|Opts], Acc) ->
     mqtt_opts(Opts, [{password, list_to_binary(Password)}|Acc]);
 mqtt_opts([{keepalive, I}|Opts], Acc) ->
@@ -957,6 +959,31 @@ mqtt_opts([{reconnect, Reconnect}|Opts], Acc) ->
    mqtt_opts(Opts, [{reconnect, Reconnect}|Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
+
+eval_expr("rand(" ++ Str) ->
+    case lists:last(Str) of
+        $) ->
+            Int = strip_last_char(Str),
+            rand:uniform(list_to_integer(Int));
+        _ -> Str
+    end.
+
+parse_expr("%i") ->
+    erlang:get(conn_id);
+parse_expr("%(i-div-2)") ->
+    erlang:get(conn_id) div 2;
+parse_expr("%(" ++ Str) ->
+    case lists:last(Str) of
+        $) ->
+            eval_expr(strip_last_char(Str));
+        _ ->
+            throw({invalid_expression, "%(" ++ Str})
+    end;
+parse_expr(Str) ->
+    Str.
+
+strip_last_char(Str) ->
+    lists:sublist(Str, 1, length(Str) - 1).
 
 tcp_opts(Opts) ->
     tcp_opts(Opts, []).
@@ -1288,23 +1315,7 @@ prepare_nst(Filename) ->
 
 -spec counters() -> {atom(), integer()}.
 counters() ->
-   Names = [ publish_latency
-           , recv
-           , sub
-           , sub_fail
-           , pub
-           , pub_fail
-           , pub_overrun
-           , pub_succ
-           , connect_succ
-           , connect_fail
-           , connect_retried
-           , reconnect_succ
-           , unreachable
-           , connection_refused
-           , connection_timeout
-           , connection_idle
-           ],
+   Names = ?COUNTER_NAMES,
    Idxs = lists:seq(2, length(Names) + 1),
    lists:zip(Names, Idxs).
 
@@ -1319,23 +1330,7 @@ maybe_init_prometheus(true) ->
                    prometheus_summary],
     application:set_env(prometheus, collectors, Collectors),
     {ok, _} = application:ensure_all_started(prometheus),
-    Counters = [ publish_latency
-               , recv
-               , sub
-               , sub_fail
-               , pub
-               , pub_fail
-               , pub_overrun
-               , pub_succ
-               , connect_succ
-               , connect_fail
-               , connect_retried
-               , reconnect_succ
-               , unreachable
-               , connection_refused
-               , connection_timeout
-               , connection_idle
-               ],
+    Counters = ?COUNTER_NAMES,
     lists:foreach(
       fun(Cnt) ->
               prometheus_counter:declare([{name, Cnt}, {help, atom_to_list(Cnt)}])
