@@ -1494,10 +1494,10 @@ parse_topics_payload(Opts) ->
          lists:foreach(
            fun({Page, Payload}) ->
               ets:insert(?shared_padding_tab, {Page, Payload})
-           end, [{10, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 10*512)]))},
-                 {250, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 250*512)]))},
-                 {2500, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 2500*512)]))},
-                 {25000, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 25000*512)]))}
+           end, [{10, << <<N:64>> || N <- lists:seq(0, 10*512) >>},
+                 {250, << <<N:64>> || N <- lists:seq(0, 250*512)>>},
+                 {2500, <<  <<N:64>> || N <- lists:seq(0, 2500*512)>>},
+                 {25000, <<  <<N:64>> || N <- lists:seq(0, 25000*512)>>}
                  ]),
          {ok, Content} = file:read_file(Filename),
          #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
