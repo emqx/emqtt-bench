@@ -7,7 +7,7 @@
          "payload_encoding": "eterm",
          "payload": {"foo1" : "bar1", "timestamp": "0", "Data": "10"},
          "stream" : 0,
-         "stream_priority": 65535,
+         "stream_priority": 200,
         },
 
         {"name": "Topic2",
