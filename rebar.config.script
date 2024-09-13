@@ -57,8 +57,11 @@ ExtraDeps = fun(C) ->
             end,
 
 NewConfig = [ {escript_incl_apps, 
-               [emqtt_bench | 
-                [ quicer || IsQuicSupp ]
+               [emqtt_bench,
+                prometheus, 
+                quantile_estimator,
+                cowboy
+               | [ quicer || IsQuicSupp ]
                ]}
             , Profiles
             | ExtraDeps(CONFIG)],
