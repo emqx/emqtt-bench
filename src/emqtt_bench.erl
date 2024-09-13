@@ -17,6 +17,7 @@
 -module(emqtt_bench).
 
 -include_lib("emqtt/include/emqtt.hrl").
+-define(shared_padding_tab, emqtt_bench_shared_payload).
 
 -export([ main/1
         , main/2
@@ -363,6 +364,7 @@ main(sub, Opts) ->
 
 main(pub, Opts) ->
     Size    = proplists:get_value(size, Opts),
+    ets:new(?shared_padding_tab, [named_table, public, ordered_set]),
     Payload = case proplists:get_value(message, Opts) of
                   undefined ->
                     iolist_to_binary([O || O <- lists:duplicate(Size, $a)]);
@@ -689,8 +691,9 @@ connect(Parent, N, PubSub, Opts) ->
                               undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
                               undefined ->
-                                 maps:map(fun(TopicName,  #{name := TopicName}) ->
-                                                erlang:send_after(RandomPubWaitMS, self(), {publish, TopicName})
+                                 %% for now,  ensure pacing...
+                                 maps:map(fun(TopicName,  #{name := TopicName, interval_ms := Interval}) ->
+                                                timer:send_interval(Interval, {publish, TopicName})
                                           end, TopicPayloadRend);
                               _ ->
                                    %% send `publish' only when all publishers
@@ -768,19 +771,24 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(Prometheus, recv),
             maybe_check_payload_hdrs(Prometheus, Payload, proplists:get_value(payload_hdrs, Opts, [])),
             loop(Parent, N, Client, PubSub, Opts);
-        {publish, TopicName} = Trigger when is_binary(TopicName) ->
+        {publish, TopicName} = _Trigger when is_binary(TopicName) ->
             TopicSpec = maps:get(TopicName, proplists:get_value(topics_payload, Opts)),
+            %erlang:send_after(maps:get(interval_ms, TopicSpec), self(), Trigger),
             case publish_topic(Client, TopicName, TopicSpec, Opts) of
                ok ->
-                  inc_counter(Prometheus, pub),
                   %% Perfer not to schedule with back pressure
-                  erlang:send_after(maps:get(interval_ms, TopicSpec), self(), Trigger),
                   ok;
                _ ->
                   Parent ! publish_complete,
                   exit(normal)
             end,
             loop(Parent, N, Client, PubSub, Opts);
+       {publish_async_res, ok} ->
+          inc_counter(pub),
+          loop(Parent, N, Client, PubSub, Opts);
+       {publish_async_res, {ok, _}} ->
+          inc_counter(pub),
+          loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
         {'EXIT', _Client, {shutdown, {transport_down, unreachable}}} ->
@@ -953,16 +961,33 @@ publish_topic(Client, Topic, #{ name := Topic
                               , qos := QoS
                               , inject_ts := TsUnit
                               , payload := PayloadTemplate
+                              , stream := LogicStream
+                              , stream_priority := StreamPriority
+                              , payload_encoding := PayloadEncoding
                               }, ClientOpts) ->
    ok = ensure_publish_begin_time(),
-   NewPayload = case TsUnit of
+   Payload1 = case TsUnit of
                    false -> PayloadTemplate;
                    _ -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(TsUnit)}
                 end,
-   case emqtt:publish(Client, feed_var(Topic, ClientOpts), jsx:encode(NewPayload), [{qos, QoS}]) of
+   NewPayload =
+      case PayloadEncoding of
+         json -> jsx:encode(Payload1);
+         eterm -> term_to_binary(Payload1)
+      end,
+   case emqtt:publish_async(Client, via(LogicStream, #{priority => StreamPriority}),
+                          feed_var(Topic, ClientOpts), #{}, NewPayload, [{qos, QoS}],
+                          infinity,
+                          {fun(Caller, Res) ->
+                                 Caller ! {publish_async_res, Res}
+                           end, [self()]
+                          }
+                         ) of
       ok -> ok;
       {ok, _} -> ok;
-      {error, Reason} -> {error, Reason}
+      {error, Reason} ->
+         logger:error("Publish Topic Err: ~p", [Reason]),
+         {error, Reason}
    end.
 
 
@@ -1466,6 +1491,14 @@ parse_topics_payload(Opts) ->
    case proplists:get_value(topics_payload, Opts) of
       undefined -> undefined;
       Filename ->
+         lists:foreach(
+           fun({Page, Payload}) ->
+              ets:insert(?shared_padding_tab, {Page, Payload})
+           end, [{10, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 10*512)]))},
+                 {250, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 250*512)]))},
+                 {2500, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 2500*512)]))},
+                 {25000, base64:encode(list_to_binary([ <<N:64>> || N <- lists:seq(0, 25000*512)]))}
+                 ]),
          {ok, Content} = file:read_file(Filename),
          #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
          %% Example
@@ -1482,6 +1515,9 @@ parse_topics_payload(Opts) ->
                             <<"inject_timestamp">> := WithTS,
                             <<"interval_ms">> := IntervalMS,
                             <<"QoS">> := QoS,
+                            <<"stream">> := StreamId,
+                            <<"stream_priority">> := StreamPriority,
+                            <<"payload_encoding">> := PayloadEncoding,
                             <<"payload">> := Payload} = Spec, Acc) ->
                            RFieldName = maps:get(<<"render">>, Spec, undefined),
                            TSUnit = case WithTS of
@@ -1499,6 +1535,9 @@ parse_topics_payload(Opts) ->
                                     , qos => QoS
                                     , render_field => RFieldName
                                     , payload => Payload
+                                    , payload_encoding => binary_to_atom(PayloadEncoding)
+                                    , stream => StreamId
+                                    , stream_priority => StreamPriority
                                     }}
                      end, #{} ,TopicSpecs)
    end.
@@ -1515,8 +1554,23 @@ do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts)
    Template = maps:get(FieldName, Payload, ""),
    SRs = [ {<<"%i">>, integer_to_binary(proplists:get_value(seq, Opts))}
          , {<<"%c">>, proplists:get_value(client_id, Opts)}
+         , {<<"%p10">>, shared_paddings(10)}
+         , {<<"%p2500">>, shared_paddings(2500)}
+         , {<<"%p25000">>, shared_paddings(25000)}
          ],
    NewVal = lists:foldl(fun({Search, Replace}, Acc) ->
                               binary:replace(Acc, Search, Replace, [global])
                         end, Template, SRs),
    Spec#{payload := Payload#{FieldName := NewVal}}.
+
+%% @doc shared_paddings, utilize binary ref for shallow copy
+shared_paddings(Pages) ->
+   %% one page = 4KBytes
+   [{_, Payload}] =  ets:lookup(?shared_padding_tab, Pages),
+   Payload.
+
+%% @doc send via which QUIC stream.
+via(0, _ClientOpts)->
+   default;
+via(LogicStreamId, ClientOpts)->
+   {logic_stream_id, LogicStreamId, ClientOpts}.
