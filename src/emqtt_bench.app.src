@@ -2,7 +2,7 @@
   {description, "Erlang MQTT v5.0 Benchmark Tool"},
   {vsn, git},
   {registered, []},
-  {applications, [kernel, stdlib, emqtt, getopt, gun, cowlib]},
+  {applications, [kernel, stdlib, emqtt, getopt, gun, cowlib, jsx]},
   {included_applications, [cowboy, prometheus]},
   {env, []},
   {maintainers,["Feng Lee <feng@emqx.io>"]},
