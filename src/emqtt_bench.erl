@@ -771,7 +771,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
             TopicSpec = maps:get(TopicName, proplists:get_value(topics_payload, Opts)),
             case publish_topic(Client, TopicName, TopicSpec, Opts) of
                ok ->
-                  inc_counter(pub),
+                  inc_counter(Prometheus, pub),
                   %% Perfer not to schedule with back pressure
                   erlang:send_after(maps:get(interval_ms, TopicSpec), self(), Trigger),
                   ok;
