@@ -691,10 +691,9 @@ connect(Parent, N, PubSub, Opts) ->
                               undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
                               undefined ->
-                                 %% for now,  ensure pacing...
-                                 maps:map(fun(TopicName,  #{name := TopicName, interval_ms := Interval}) ->
-                                                timer:send_interval(Interval, {publish, TopicName})
-                                          end, TopicPayloadRend);
+                                 maps:foreach(fun(TopicName,  #{name := TopicName}) ->
+                                                    erlang:send_after(RandomPubWaitMS, self(), {publish, TopicName})
+                                              end, TopicPayloadRend);
                               _ ->
                                    %% send `publish' only when all publishers
                                    %% are in place.
@@ -748,14 +747,14 @@ loop(Parent, N, Client, PubSub, Opts) ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
             erlang:send_after(RandomPubWaitMS, self(), publish),
             loop(Parent, N, Client, PubSub, Opts);
-        publish ->
+        publish = Trigger->
            case (proplists:get_value(limit_fun, Opts))() of
                 true ->
                     %% this call hangs if emqtt inflight is full
                     case publish(Client, Opts) of
                         ok ->
                             inc_counter(Prometheus, pub),
-                            ok = schedule_next_publish(Prometheus, Interval),
+                            ok = schedule_next_publish(Prometheus, Interval, Trigger),
                             ok;
                         {error, Reason} ->
                             %% TODO: schedule next publish for retry ?
@@ -771,23 +770,24 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(Prometheus, recv),
             maybe_check_payload_hdrs(Prometheus, Payload, proplists:get_value(payload_hdrs, Opts, [])),
             loop(Parent, N, Client, PubSub, Opts);
-        {publish, TopicName} = _Trigger when is_binary(TopicName) ->
+        {publish, TopicName} = Trigger when is_binary(TopicName) ->
             TopicSpec = maps:get(TopicName, proplists:get_value(topics_payload, Opts)),
-            %erlang:send_after(maps:get(interval_ms, TopicSpec), self(), Trigger),
             case publish_topic(Client, TopicName, TopicSpec, Opts) of
                ok ->
-                  %% Perfer not to schedule with back pressure
-                  ok;
+                  schedule_next_publish(Prometheus, maps:get(interval_ms, TopicSpec), Trigger);
                _ ->
                   Parent ! publish_complete,
                   exit(normal)
             end,
             loop(Parent, N, Client, PubSub, Opts);
        {publish_async_res, ok} ->
-          inc_counter(pub),
+          inc_counter(Prometheus, pub),
           loop(Parent, N, Client, PubSub, Opts);
        {publish_async_res, {ok, _}} ->
-          inc_counter(pub),
+          inc_counter(Prometheus, pub),
+          loop(Parent, N, Client, PubSub, Opts);
+       {publish_async_res, {error, _}} ->
+          inc_counter(Prometheus, pub_fail),
           loop(Parent, N, Client, PubSub, Opts);
         {'EXIT', _Client, normal} ->
             ok;
@@ -827,17 +827,26 @@ loop(Parent, N, Client, PubSub, Opts) ->
 	end.
 
 ensure_publish_begin_time() ->
-    case get_publish_begin_time() of
-        undefined ->
-            NowT = erlang:monotonic_time(millisecond),
-            put(publish_begin_ts, NowT),
-            ok;
-        _ ->
-            ok
-    end.
+   %% Default: Use Topic from CLI
+   ensure_publish_begin_time(publish).
+ensure_publish_begin_time(Topic) ->
+   case get_publish_begin_time(Topic) of
+      undefined ->
+         NowT = erlang:monotonic_time(millisecond),
+         put({publish_begin_ts, Topic}, NowT),
+         ok;
+      _ ->
+         ok
+   end.
 
 get_publish_begin_time() ->
-    get(publish_begin_ts).
+   get_publish_begin_time(publish).
+get_publish_begin_time(Topic) ->
+    get({publish_begin_ts, Topic}).
+
+update_publish_start_at(Topic) ->
+   put({publish_begin_ts, Topic},
+       erlang:monotonic_time(millisecond)).
 
 %% @doc return new value
 bump_publish_attempt_counter() ->
@@ -850,10 +859,7 @@ bump_publish_attempt_counter() ->
     _ = put(success_publish_count, NewCount),
     NewCount.
 
-schedule_next_publish(Prometheus, Interval) ->
-   schedule_next_publish(Prometheus, Interval, publish).
-
-schedule_next_publish(Prometheus, Interval, Trigger) ->
+schedule_next_publish(Prometheus, Interval, publish = Trigger) ->
     PubAttempted = bump_publish_attempt_counter(),
     BeginTime = get_publish_begin_time(),
     NextTime = BeginTime + PubAttempted * Interval,
@@ -864,7 +870,18 @@ schedule_next_publish(Prometheus, Interval, Trigger) ->
         true -> _ = erlang:send_after(Remain, self(), Trigger);
         false -> self() ! Trigger
     end,
-    ok.
+   ok;
+schedule_next_publish(Prometheus, Interval, {publish, TopicName} = Trigger) ->
+   %% Different scheduling for publish with topic specs
+   Elapsed = erlang:monotonic_time(millisecond) - get_publish_begin_time(TopicName),
+   case Elapsed > Interval of
+      true ->
+         inc_counter(Prometheus, pub_overrun),
+         erlang:send_after(0, self(), Trigger);
+      false ->
+         erlang:send_after(Interval - Elapsed, self(), Trigger)
+   end,
+   ok.
 
 pub_limit_fun_init(0) ->
     fun() -> true end;
@@ -965,7 +982,6 @@ publish_topic(Client, Topic, #{ name := Topic
                               , stream_priority := StreamPriority
                               , payload_encoding := PayloadEncoding
                               }, ClientOpts) ->
-   ok = ensure_publish_begin_time(),
    Payload1 = case TsUnit of
                    false -> PayloadTemplate;
                    _ -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(TsUnit)}
@@ -975,6 +991,8 @@ publish_topic(Client, Topic, #{ name := Topic
          json -> jsx:encode(Payload1);
          eterm -> term_to_binary(Payload1)
       end,
+
+   update_publish_start_at(Topic),
    case emqtt:publish_async(Client, via(LogicStream, #{priority => StreamPriority}),
                           feed_var(Topic, ClientOpts), #{}, NewPayload, [{qos, QoS}],
                           infinity,
