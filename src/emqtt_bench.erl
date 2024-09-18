@@ -962,11 +962,7 @@ publish(Client, Opts) ->
                       Payload0
               end,
     %% prefix dynamic headers.
-    NewPayload = case proplists:get_value(payload_hdrs, Opts, []) of
-                     [] -> Payload;
-                     PayloadHdrs ->
-                         with_payload_headers(PayloadHdrs, Payload)
-                 end,
+    NewPayload = maybe_prefix_payload(Payload, Opts),
     case emqtt:publish(Client, topic_opt(Opts), NewPayload, Flags) of
         ok -> ok;
         {ok, _} -> ok;
@@ -989,9 +985,8 @@ publish_topic(Client, Topic, #{ name := Topic
    NewPayload =
       case PayloadEncoding of
          json -> jsx:encode(Payload1);
-         eterm -> term_to_binary(Payload1)
+         eterm -> maybe_prefix_payload(term_to_binary(Payload1), ClientOpts)
       end,
-
    update_publish_start_at(Topic),
    case emqtt:publish_async(Client, via(LogicStream, #{priority => StreamPriority}),
                           feed_var(Topic, ClientOpts), #{}, NewPayload, [{qos, QoS}],
@@ -1498,13 +1493,14 @@ histogram_observe(false, _, _) ->
 histogram_observe(true, Metric, Value) ->
     prometheus_histogram:observe(Metric, Value).
 
--spec parse_topics_payload(proplists:proplist()) -> undefined | #{Name :: string() =>  #{name := string(),
-                                                                                         interval_ms := non_neg_integer(),
-                                                                                         qos := 0 | 1 |_2,
-                                                                                         render_field := undefined | binary(),
-                                                                                         inject_ts := false | second | millisecond | microsecond | nanosecond,
-                                                                                         payload := map()
-                                                                                        }}.
+-spec parse_topics_payload(proplists:proplist()) ->
+         undefined | #{Name :: string() =>  #{name := string(),
+                                              interval_ms := non_neg_integer(),
+                                              qos := 0 | 1 |_2,
+                                              render_field := undefined | binary(),
+                                              inject_ts := false | second | millisecond | microsecond | nanosecond,
+                                              payload := map()
+                                             }}.
 parse_topics_payload(Opts) ->
    case proplists:get_value(topics_payload, Opts) of
       undefined -> undefined;
@@ -1592,3 +1588,11 @@ via(0, _ClientOpts)->
    default;
 via(LogicStreamId, ClientOpts)->
    {logic_stream_id, LogicStreamId, ClientOpts}.
+
+%% @doc add payload headers
+maybe_prefix_payload(Payload, ClientOpts) ->
+   case proplists:get_value(payload_hdrs, ClientOpts, []) of
+      [] -> Payload;
+      PayloadHdrs ->
+         with_payload_headers(PayloadHdrs, Payload)
+   end.
