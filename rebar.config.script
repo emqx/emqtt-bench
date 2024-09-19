@@ -11,7 +11,7 @@ IsWin32 = fun() ->
                 win32 =:= element(1, os:type())
           end,
 
-Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.114"}}},
+Quicer = {quicer, {git, "https://github.com/emqx/quic.git", {tag, "0.0.504"}}},
 
 IsQuicSupp = not (IsCentos6() orelse IsWin32() orelse
                   false =/= os:getenv("BUILD_WITHOUT_QUIC")
@@ -25,6 +25,7 @@ Profiles = {profiles,[ {escript, []}
                                                                 , getopt
                                                                 , cowboy
                                                                 , prometheus
+                                                                , jsx
                                                                   | [ quicer || IsQuicSupp ]
                                                                 ] }
                                 , {overlay_vars_values, [ {runner_root_dir, "$(cd $(dirname $(readlink $0 || echo $0))/..; pwd -P)"}
@@ -34,6 +35,7 @@ Profiles = {profiles,[ {escript, []}
                                             , {mkdir, "escript"}
                                             , {copy, "_build/emqtt_bench/bin", "escript"}
                                             , {copy, "bin/emqtt_bench","bin/emqtt_bench"}
+                                            , {copy, "topic_spec.json", "topic_spec.json"}
                                             , {template,"bin/emqtt_bench","bin/emqtt_bench"}
                                             ]}
                                 , {tar_hooks, [ "scripts/macos-sign-binaries.sh",
@@ -56,12 +58,9 @@ ExtraDeps = fun(C) ->
                 lists:keystore(deps, 1, C, {deps, Deps})
             end,
 
-NewConfig = [ {escript_incl_apps, 
-               [emqtt_bench,
-                prometheus, 
-                quantile_estimator,
-                cowboy
-               | [ quicer || IsQuicSupp ]
+NewConfig = [ {escript_incl_apps,
+               [emqtt_bench |
+                [ quicer || IsQuicSupp ]
                ]}
             , Profiles
             | ExtraDeps(CONFIG)],
