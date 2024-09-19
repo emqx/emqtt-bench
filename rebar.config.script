@@ -58,12 +58,9 @@ ExtraDeps = fun(C) ->
                 lists:keystore(deps, 1, C, {deps, Deps})
             end,
 
-NewConfig = [ {escript_incl_apps, 
-               [emqtt_bench,
-                prometheus, 
-                quantile_estimator,
-                cowboy
-               | [ quicer || IsQuicSupp ]
+NewConfig = [ {escript_incl_apps,
+               [emqtt_bench |
+                [ quicer || IsQuicSupp ]
                ]}
             , Profiles
             | ExtraDeps(CONFIG)],
