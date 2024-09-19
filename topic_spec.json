@@ -5,9 +5,10 @@
          "inject_timestamp" : true,
          "QoS": 1,
          "payload_encoding": "eterm",
-         "payload": {"foo1" : "bar1", "timestamp": "0", "Data": "10"},
-         "stream" : 0,
+         "payload": {"foo1" : "bar1", "timestamp": "0", "Data": "%p10"},
+         "stream" : 1,
          "stream_priority": 200,
+         "render": "Data",
         },
 
         {"name": "Topic2",
@@ -15,8 +16,8 @@
          "inject_timestamp" : "ms",
          "QoS": 1,
          "payload_encoding": "eterm",
-         "payload": {"foo2" : "bar2", "timestamp": "0", "VIN" : "VIN", "Data": "%p25000"},
-         "stream" : 0,
+         "payload": {"foo2" : "bar2", "timestamp": "0", "VIN" : "VIN", "Data": "%p2500"},
+         "stream" : 2,
          "stream_priority": 8,
          "render": "Data",
         }

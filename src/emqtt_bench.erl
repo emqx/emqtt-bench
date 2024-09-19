@@ -87,7 +87,7 @@
           "is used."
          },
          {topics_payload, undefined, "topics-payload", string,
-          "json file defines topics and payloads"},
+          "json file defining topics and payloads"},
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"},
          {qoe, $Q, "qoe", {boolean, false},
@@ -832,8 +832,7 @@ ensure_publish_begin_time() ->
 ensure_publish_begin_time(Topic) ->
    case get_publish_begin_time(Topic) of
       undefined ->
-         NowT = erlang:monotonic_time(millisecond),
-         put({publish_begin_ts, Topic}, NowT),
+         update_publish_start_at(Topic),
          ok;
       _ ->
          ok
@@ -999,7 +998,7 @@ publish_topic(Client, Topic, #{ name := Topic
       ok -> ok;
       {ok, _} -> ok;
       {error, Reason} ->
-         logger:error("Publish Topic Err: ~p", [Reason]),
+         logger:error("Publish Topic: ~p Err: ~p", [Topic, Reason]),
          {error, Reason}
    end.
 
@@ -1496,7 +1495,7 @@ histogram_observe(true, Metric, Value) ->
 -spec parse_topics_payload(proplists:proplist()) ->
          undefined | #{Name :: string() =>  #{name := string(),
                                               interval_ms := non_neg_integer(),
-                                              qos := 0 | 1 |_2,
+                                              qos := 0 | 1 |2,
                                               render_field := undefined | binary(),
                                               inject_ts := false | second | millisecond | microsecond | nanosecond,
                                               payload := map()
