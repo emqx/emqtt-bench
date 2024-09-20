@@ -67,7 +67,8 @@ for f in \
     escript \
     heart \
     inet_gethost \
-    libquicer_nif.dylib \
+    libmsquic*.dylib \
+    libquicer_nif*.dylib \
     libquicer_nif.so \
     otp_test_engine.so \
     run_erl \
