@@ -112,7 +112,7 @@
           "client private key for authentication, if required by server"},
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
-         {quic, undefined, "quic", {boolean, false},
+         {quic, undefined, "quic", {string, "false"},
           "QUIC transport"},
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
@@ -206,7 +206,7 @@
           "client private key for authentication, if required by server"},
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
-         {quic, undefined, "quic", {boolean, false},
+         {quic, undefined, "quic", {string, "false"},
           "QUIC transport"},
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
@@ -272,7 +272,7 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
-         {quic, undefined, "quic", {boolean, false},
+         {quic, undefined, "quic", {string, "false"},
           "QUIC transport"},
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          {ifaddr, undefined, "ifaddr", string,
@@ -435,11 +435,13 @@ start(PubSub, Opts) ->
                                        false ->
                                            CntPerWorker
                                    end,
+                          QConnOpts = quic_opts_from_arg(Opts),
                           WOpts = replace_opts(Opts, [{startnumber, StartNumber},
                                                       {interval, Interval},
                                                       {payload_hdrs, PayloadHdrs},
                                                       {topics_payload, TopicPayload},
-                                                      {count, Count1}
+                                                      {count, Count1},
+                                                      {quic, QConnOpts}
                                                      ]),
                           WOpts1 = [{publish_signal_pid, PublishSignalPid} | WOpts],
                           proc_lib:spawn(?MODULE, run, [self(), PubSub, WOpts1, AddrList, HostList])
@@ -465,7 +467,7 @@ prepare(PubSub, Opts) ->
         false ->
             ok
     end,
-    case proplists:get_bool(quic, Opts) of
+    case is_quic(Opts) of
         true ->
           maybe_start_quicer() orelse error({quic, not_supp_or_disabled}),
           prepare_for_quic(Opts);
@@ -660,9 +662,10 @@ connect(Parent, N, PubSub, Opts) ->
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts = [{clientid, ClientId},
                 {tcp_opts, tcp_opts(Opts)},
-                {ssl_opts, ssl_opts(Opts)}]
+                {ssl_opts, ssl_opts(Opts)},
+                {quic_opts, quic_opts(Opts, ClientId)}
+               ]
         ++ session_property_opts(Opts)
-        ++ quic_opts(Opts, ClientId)
         ++ mqtt_opts(Opts),
     MqttOpts1 = case PubSub of
                   conn -> [{force_ping, true} | MqttOpts];
@@ -691,8 +694,8 @@ connect(Parent, N, PubSub, Opts) ->
                               undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
                               undefined ->
-                                 maps:foreach(fun(TopicName,  #{name := TopicName}) ->
-                                                    erlang:send_after(RandomPubWaitMS, self(), {publish, TopicName})
+                                 maps:foreach(fun(TopicName,  #{name := TopicName, interval_ms := DelayMs}) ->
+                                                    erlang:send_after(RandomPubWaitMS + DelayMs, self(), {publish, TopicName})
                                               end, TopicPayloadRend);
                               _ ->
                                    %% send `publish' only when all publishers
@@ -1097,7 +1100,7 @@ all_ssl_ciphers() ->
 
 -spec connect_fun(proplists:proplist()) -> FunName :: atom().
 connect_fun(Opts)->
-    case {proplists:get_bool(ws, Opts), proplists:get_bool(quic, Opts)} of
+    case {proplists:get_bool(ws, Opts), is_quic(Opts)} of
         {true, true} ->
             throw({error, "unsupported transport: ws over quic "});
         {true, false} ->
@@ -1294,7 +1297,24 @@ shard_addr(N, AddrList) ->
     Offset = N rem length(AddrList),
     lists:nth(Offset + 1, AddrList).
 
-quic_opts(Opts, ClientId) when is_binary(ClientId) ->
+-spec quic_opts(proplists:proplist(), binary()) -> {proplists:proplist(), proplists:proplist()}.
+quic_opts(Opts, ClientId) ->
+   Nst = quic_opts_nst(Opts, ClientId),
+   case proplists:get_value(quic, Opts, undefined) of
+      undefined ->
+         [];
+      false ->
+         [];
+      true ->
+         Nst;
+      [] ->
+         Nst;
+      [{ConnOpts, StrmOpts}]
+        when is_list(ConnOpts) andalso is_list(StrmOpts)->
+         {Nst++ConnOpts, StrmOpts}
+   end.
+
+quic_opts_nst(Opts, ClientId) when is_binary(ClientId) ->
    case proplists:get_value(nst_dets_file, Opts, undefined) of
       undefined -> [];
       _Filename ->
@@ -1594,4 +1614,30 @@ maybe_prefix_payload(Payload, ClientOpts) ->
       [] -> Payload;
       PayloadHdrs ->
          with_payload_headers(PayloadHdrs, Payload)
+   end.
+
+-spec is_quic(proplists:proplist()) -> boolean().
+is_quic(Opts) ->
+   proplists:get_value(quic, Opts, false) =/= false.
+
+quic_opts_from_arg(Opts)->
+   case proplists:get_value(quic, Opts, false) of
+      V when is_boolean(V) ->
+         V;
+      "false" ->
+         false;
+      "true" ->
+         true;
+      V when is_list(V) ->
+         case filename:extension(V) of
+            ".eterm" ->
+               case file:consult(V) of
+                  {ok, ConnOpts} ->
+                     ConnOpts;
+                  {error, enoent} ->
+                     error({"--quic "++ V, no_exists})
+               end;
+            _ ->
+               error("bad --quic")
+         end
    end.
