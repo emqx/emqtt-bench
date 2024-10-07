@@ -1524,26 +1524,8 @@ parse_topics_payload(Opts) ->
    case proplists:get_value(topics_payload, Opts) of
       undefined -> undefined;
       Filename ->
-         lists:foreach(
-           fun({Page, Payload}) ->
-              ets:insert(?shared_padding_tab, {Page, Payload})
-           end, [{10, << <<N:64>> || N <- lists:seq(0, 10*512) >>},
-                 {250, << <<N:64>> || N <- lists:seq(0, 250*512)>>},
-                 {2500, <<  <<N:64>> || N <- lists:seq(0, 2500*512)>>},
-                 {25000, <<  <<N:64>> || N <- lists:seq(0, 25000*512)>>}
-                 ]),
          {ok, Content} = file:read_file(Filename),
          #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
-         %% Example
-         %%    #{<<"topics">> =>
-         %% [#{<<"inject_timestamp">> => <<"ms">>,<<"interval_ms">> => <<"1000">>,
-         %%    <<"name">> => <<"Topic1">>,
-         %%    <<"payload">> =>
-         %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}},
-         %%  #{<<"inject_timestamp">> => true,<<"interval_ms">> => <<"500">>,
-         %%    <<"name">> => <<"Topic2">>,
-         %%    <<"payload">> =>
-         %%        #{<<"foo">> => <<"bar">>,<<"timestamp">> => <<"0">>}}]}
          lists:foldl(fun(#{ <<"name">> := TopicName,
                             <<"inject_timestamp">> := WithTS,
                             <<"interval_ms">> := IntervalMS,
@@ -1587,19 +1569,28 @@ do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts)
    Template = maps:get(FieldName, Payload, ""),
    SRs = [ {<<"%i">>, integer_to_binary(proplists:get_value(seq, Opts))}
          , {<<"%c">>, proplists:get_value(client_id, Opts)}
-         , {<<"%p10">>, shared_paddings(10)}
-         , {<<"%p2500">>, shared_paddings(2500)}
-         , {<<"%p25000">>, shared_paddings(25000)}
+         , {<<"%p">>, fun shared_paddings/1}
          ],
-   NewVal = lists:foldl(fun({Search, Replace}, Acc) ->
+   NewVal = lists:foldl(fun({<<"%p">>, Fun}, Acc) when is_function(Fun) ->
+                              <<"%p", Pages/binary >> = Acc,
+                              Fun(Pages);
+                           ({Search, Replace}, Acc) ->
                               binary:replace(Acc, Search, Replace, [global])
                         end, Template, SRs),
    Spec#{payload := Payload#{FieldName := NewVal}}.
 
 %% @doc shared_paddings, utilize binary ref for shallow copy
-shared_paddings(Pages) ->
+shared_paddings(Pages) when is_binary(Pages) ->
+   shared_paddings(binary_to_integer(Pages));
+shared_paddings(Pages) when is_integer(Pages) ->
    %% one page = 4KBytes
-   [{_, Payload}] =  ets:lookup(?shared_padding_tab, Pages),
+   case ets:lookup(?shared_padding_tab, Pages) of
+      [{_, Payload}] ->
+         Payload;
+      [] ->
+         Payload = << <<N:64>> || N <- lists:seq(1, Pages*512) >>,
+         ets:insert(?shared_padding_tab, {Pages, Payload})
+   end,
    Payload.
 
 %% @doc send via which QUIC stream.
