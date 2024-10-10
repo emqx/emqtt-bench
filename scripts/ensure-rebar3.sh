@@ -9,11 +9,14 @@ cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 OTP_VSN=$(erl -noshell -eval 'io:format("~s~n", [erlang:system_info(otp_release)]), halt().')
 case ${OTP_VSN} in
-    25*)
-        VERSION="3.19.0-emqx-9"
+    27*)
+        VERSION="3.20.0-emqx-3"
         ;;
     26*)
         VERSION="3.20.0-emqx-1"
+        ;;
+    25*)
+        VERSION="3.19.0-emqx-9"
         ;;
     *)
         echo "Unsupported Erlang/OTP version $OTP_VSN"
