@@ -27,6 +27,9 @@
         , loop/5
         ]).
 
+%% Internal callback
+-export([wakeup_main_loop/2, main_loop/2]).
+
 -define(STARTNUMBER_DESC,
         "The start point when assigning sequence numbers to clients. "
         "This is useful when running multiple emqtt-bench "
@@ -502,11 +505,19 @@ main_loop(Uptime, Count) ->
             maybe_print_qoe(Count),
             maybe_dump_nst_dets(Count),
             garbage_collect(),
-            main_loop(Uptime, Count);
+            hibernate_main_loop(Uptime, Count);
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
-            main_loop(Uptime, Count)
+            hibernate_main_loop(Uptime, Count)
+    after 5 ->
+        hibernate_main_loop(Uptime, Count)
     end.
+
+hibernate_main_loop(Uptime, Count) ->
+    proc_lib:hibernate(?MODULE, wakeup_main_loop, [Uptime, Count]).
+
+wakeup_main_loop(Uptime, Count) ->
+    ?MODULE:main_loop(Uptime, Count).
 
 maybe_dump_nst_dets(Count)->
     Count == ets:info(quic_clients_nsts, size)
