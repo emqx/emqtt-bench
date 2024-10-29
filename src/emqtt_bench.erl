@@ -177,8 +177,13 @@
          {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {interval, $i, "interval", {integer, 10},
           "interval of connecting to the broker"},
+         %%  `topic' and `multi_topic' are mutually exclusive
          {topic, $t, "topic", string,
-          "topic subscribe, support %u, %c, %i variables"},
+          "Topic subscribe, support %u, %c, %i variables. "
+          "Mutually exclusive with --multi-topic"},
+         {multi_topic, undefined, "multi-topic", boolean,
+          "Lot number of topics to subscribe to. Topic name hard coded for now. "
+          "Mutually exclusive with -t or --topic"},
          {payload_hdrs, undefined, "payload-hdrs", {string, []},
           "Handle the payload header from received message. "
           "Publish side must have the same option enabled in the same order. "
@@ -226,7 +231,7 @@
           "takes effect when used together with --lowmem."},
          {log_to, undefined, "log_to", {atom, console},
           "Control where the log output goes. "
-          "console: directly to the console      "
+          "console: directly to the console "
           "null: quietly, don't output any logs."
          },
          {prometheus, undefined, "prometheus", undefined,
@@ -313,7 +318,7 @@
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
     ok = maybe_help(sub, Opts),
-    ok = check_required_args(sub, [count, topic], Opts),
+    ok = check_required_args(sub, [count, {topic, multi_topic}], Opts),
     main(sub, Opts);
 
 main(["pub"|Argv]) ->
@@ -342,15 +347,61 @@ maybe_help(PubSub, Opts) ->
     end.
 
 check_required_args(PubSub, Keys, Opts) ->
-    lists:foreach(fun(Key) ->
-        case lists:keyfind(Key, 1, Opts) of
-            false ->
-                io:format("Error: '~s' required~n", [Key]),
-                usage(PubSub),
-                halt(1);
-            _ -> ok
-        end
-    end, Keys).
+    lists:foreach(
+        fun(Key) ->
+                case find_required_key(Key, Opts) of
+                    true ->
+                        ok;
+                    false ->
+                        usage(PubSub),
+                        halt(1)
+                end
+        end,
+        Keys).
+
+find_required_key(Key, Opts) when is_tuple(Key) ->
+    Keys = tuple_to_list(Key),
+    Format = format_exclusive_keys(Keys),
+    case find_exclusive_keys(Keys, Opts) of
+        [] ->
+            io:format("Error: one of ~s required~n", [Format]),
+            false;
+        [_] ->
+            true;
+        [_ | _]->
+            io:format("Error: exclusive options found, only one of ~s is required~n", [Format]),
+            false
+    end;
+find_required_key(Key, Opts) ->
+    case find_key(Key, Opts) of
+        false -> io:format("Error: '~s' required~n", [Key]), false;
+        true -> true
+    end.
+
+find_exclusive_keys(Keys, Opts) ->
+    find_exclusive_keys(Keys, Opts, []).
+
+find_exclusive_keys([], _Opts, Acc) ->
+    lists:usort(Acc);
+find_exclusive_keys([Key | Rest], Opts, Acc) ->
+    case find_key(Key, Opts) of
+        true ->
+            find_exclusive_keys(Rest, Opts, [Key | Acc]);
+        false ->
+            find_exclusive_keys(Rest, Opts, Acc)
+    end.
+
+find_key(Key, Opts) ->
+    case lists:keyfind(Key, 1, Opts) of
+        {Key, _Value} ->
+            true;
+        false ->
+            false
+    end.
+
+format_exclusive_keys(Keys) ->
+    Res = lists:flatten([ ["| ", io_lib:format("'~s'", [K]), " "] || K <- Keys]),
+    string:trim(string:trim(Res, leading, "| "), trailing, " ").
 
 usage(PubSub) ->
     ScriptPath = escript:script_name(),
@@ -838,7 +889,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
                     skip
             end,
             proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts])
-	end.
+    end.
 
 ensure_publish_begin_time() ->
    %% Default: Use Topic from CLI
@@ -1495,7 +1546,7 @@ maybe_start_restapi(disabled) ->
 maybe_start_restapi("disabled") ->
     ok;
 maybe_start_restapi(RestAPI) ->
-    {IP, Port} = 
+    {IP, Port} =
         case string:split(RestAPI, ":") of
             [IP0, Port0] ->
                 {Port1, _} = string:to_integer(Port0),
