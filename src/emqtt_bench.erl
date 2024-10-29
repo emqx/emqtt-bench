@@ -751,7 +751,11 @@ connect(Parent, N, PubSub, Opts) ->
             Res =
                 case PubSub of
                     conn -> ok;
-                    sub -> subscribe(Client, N, AllOpts);
+                    sub -> case proplists:get_value(multi_topic, Opts, undefined) of
+                               %% hardcoded as 200ms (5 subscribe per second)
+                               true -> erlang:send_after(200, self(), {subscribe, multi_topic});
+                               undefined -> self() ! subscribe
+                           end;
                     pub -> case MRef of
                               undefined when TopicPayloadRend == undefined ->
                                    erlang:send_after(RandomPubWaitMS, self(), publish);
@@ -812,7 +816,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
             RandomPubWaitMS = proplists:get_value(pub_start_wait, Opts),
             erlang:send_after(RandomPubWaitMS, self(), publish),
             loop(Parent, N, Client, PubSub, Opts);
-        publish = Trigger->
+        publish = Trigger ->
            case (proplists:get_value(limit_fun, Opts))() of
                 true ->
                     %% this call hangs if emqtt inflight is full
@@ -831,6 +835,26 @@ loop(Parent, N, Client, PubSub, Opts) ->
                     Parent ! publish_complete,
                     exit(normal)
             end;
+        subscribe ->
+            subscribe(Client, N, Opts);
+        {subscribe, multi_topic} = Trigger ->
+            case subscribe(Client, N, Opts) of
+                {ok, _Props, _RCs} ->
+                    ok = schedule_next_subscribe(Trigger),
+                    ok;
+                {error, _Reason} ->
+                    exit({error, sub_multi_topic_failed})
+            end,
+            loop(Parent, N, Client, PubSub, Opts);
+        {unsubscribe, multi_topic} = Trigger ->
+            case unsubscribe(Client, N, Opts) of
+                {ok, _Props, _RCs} ->
+                    ok = schedule_next_unsubscribe(Trigger),
+                    ok;
+                {error, _Reason} ->
+                    exit({error, unsub_multi_topic_failed})
+            end,
+            loop(Parent, N, Client, PubSub, Opts);
         {publish, #{payload := Payload}} ->
             inc_counter(Prometheus, recv),
             maybe_check_payload_hdrs(Prometheus, Payload, proplists:get_value(payload_hdrs, Opts, [])),
@@ -874,7 +898,11 @@ loop(Parent, N, Client, PubSub, Opts) ->
             inc_counter(Prometheus, reconnect_succ),
             IsSessionPresent = (1 == proplists:get_value(session_present, emqtt:info(Client))),
             %% @TODO here we do not really check the subscribe
-            PubSub =:= sub andalso not IsSessionPresent andalso subscribe(Client, N, Opts),
+            SubMode = case proplists:get_value(multi_topic, Opts, undefined) of
+                          undefined -> topics;
+                          true -> multi_topic
+                      end,
+            PubSub =:= sub andalso not IsSessionPresent andalso subscribe(Client, N, {SubMode, Opts}),
             loop(Parent, N, Client, PubSub, Opts);
         Other ->
             io:format("client(~w): discarded unknown message ~p~n", [N, Other]),
@@ -966,34 +994,106 @@ pub_limit_fun_init(N) when is_integer(N), N > 0 ->
     end.
 
 subscribe(Client, N, Opts) ->
+    SubMode = case proplists:get_value(multi_topic, Opts, undefined) of
+                  undefined -> topic;
+                  true -> multi_topic
+              end,
+    Topics = case SubMode of
+                 topic -> topics_opt(Opts);
+                 multi_topic -> [random_topic()]
+             end,
+    do_subscribe(Client, N, Opts, SubMode, Topics).
+
+do_subscribe(Client, N, Opts, SubMode, Topics) ->
     Prometheus = lists:member(prometheus, Opts),
     Qos = proplists:get_value(qos, Opts),
-    Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
+    Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- Topics]),
     case Res of
        {ok, _, _} ->
-          case proplists:get_value(qoe, emqtt:info(Client), false) of
-             false ->
-                ok;
-             #{ initialized := StartTs
-              , handshaked := HSTs
-              , connected := ConnTs
-              , subscribed := SubTs
-              }  ->
-                ElapsedHandshake = HSTs - StartTs,
-                ElapsedConn = ConnTs - StartTs,
-                ElapsedSub = SubTs - StartTs,
-                histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
-                histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
-                histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
-                true = ets:insert(qoe_store, {proplists:get_value(client_id, Opts),
-                                              {ElapsedHandshake, ElapsedConn, ElapsedSub}
-                                             }),
-                ok
-          end;
+            bump_subscribe_attempt_counter(SubMode, Topics),
+            case proplists:get_value(qoe, emqtt:info(Client), false) of
+                false ->
+                    ok;
+                #{initialized := StartTs, handshaked := HSTs, connected := ConnTs, subscribed := SubTs}  ->
+                    ElapsedHandshake = HSTs - StartTs,
+                    ElapsedConn = ConnTs - StartTs,
+                    ElapsedSub = SubTs - StartTs,
+                    histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
+                    histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
+                    histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
+                    true = ets:insert(qoe_store,
+                                      {proplists:get_value(client_id, Opts),
+                                       {ElapsedHandshake, ElapsedConn, ElapsedSub}
+                                      }),
+                    ok
+            end;
         {error, Reason}->
             io:format("client(~w): subscribe error - ~p~n", [N, Reason])
     end,
     Res.
+
+-define(MULTI_TOPIC_COUNT, 10). %% 1000 random topics
+-define(MULTI_TOPIC_SUB_INTERVAL, 200). %% 200ms
+-define(MULTI_TOPIC_UNSUB_INTERVAL, 200). %% 200ms
+-define(MULTI_TOPIC_UNSUB_WAIT, 10 * 1000). %% 120s
+schedule_next_subscribe({subscribe, multi_topic} = Trigger) ->
+    case get(success_subscribe_count) of
+        Num when Num < ?MULTI_TOPIC_COUNT ->
+            erlang:send_after(?MULTI_TOPIC_SUB_INTERVAL, self(), Trigger),
+            ok;
+        Num when Num >= ?MULTI_TOPIC_COUNT ->
+            erlang:send_after(?MULTI_TOPIC_UNSUB_WAIT, self(), {unsubscribe, multi_topic}),
+            ok
+    end.
+
+random_topic() ->
+    bin(lists:flatten(lists:join("/", [generate_hex_string(5) || _ <- lists:seq(1, 5)]))).
+
+generate_hex_string(Length) ->
+    RandomBytes = crypto:strong_rand_bytes(ceil(Length / 2)),
+    HexString = lists:flatten([io_lib:format("~2.16.0b", [B]) || B <- binary:bin_to_list(RandomBytes)]),
+    string:substr(HexString, 1, Length).
+
+unsubscribe(Client, _N, _Opts) ->
+    Topics = bump_unsubscribe_attempt_counter(),
+    emqtt:unsubscribe(Client, Topics).
+
+schedule_next_unsubscribe(Trigger) ->
+    case get(success_unsubscribe_count) of
+        Num when Num < ?MULTI_TOPIC_COUNT ->
+            erlang:send_after(?MULTI_TOPIC_UNSUB_INTERVAL, self(), Trigger),
+            ok;
+        _ ->
+            ok
+    end.
+
+-define(multi_topic, '$multi_topic').
+bump_subscribe_attempt_counter(topic, _Topics) ->
+    ok;
+bump_subscribe_attempt_counter(multi_topic, Topics) ->
+    io:format("Subscribed to ~p~n", [Topics]),
+    case get(success_subscribe_count) of
+        undefined ->
+            put(success_subscribe_count, 1),
+            put({?multi_topic, 1}, Topics);
+        Val ->
+            Count = Val + 1,
+            put(success_subscribe_count, Count),
+            put({?multi_topic, Count}, Topics)
+    end.
+
+bump_unsubscribe_attempt_counter() ->
+    case get(success_unsubscribe_count) of
+        undefined ->
+            put(success_unsubscribe_count, 1),
+            erase({?multi_topic, 1});
+        Val ->
+            Count = Val + 1,
+            put(success_unsubscribe_count, Count),
+            Topics = erase({?multi_topic, Count}),
+            io:format("Unsubscribed to ~p~n", [Topics]),
+            Topics
+    end.
 
 publish(Client, Opts) ->
     %% Ensure publish begin time is initialized right before the first publish,
@@ -1200,15 +1300,15 @@ host_prefix(Opts) ->
     end.
 
 topics_opt(Opts) ->
-    Topics = topics_opt(Opts, []),
+    Topics = topics_from_opts(Opts, []),
     [feed_var(bin(Topic), Opts) || Topic <- Topics].
 
-topics_opt([], Acc) ->
-    Acc;
-topics_opt([{topic, Topic}|Topics], Acc) ->
-    topics_opt(Topics, [Topic | Acc]);
-topics_opt([_Opt|Topics], Acc) ->
-    topics_opt(Topics, Acc).
+topics_from_opts([], Acc) ->
+    lists:reverse(Acc);
+topics_from_opts([{topic, Topic} | Topics], Acc) ->
+    topics_from_opts(Topics, [Topic | Acc]);
+topics_from_opts([_Opt | Topics], Acc) ->
+    topics_from_opts(Topics, Acc).
 
 topic_opt(Opts) ->
     feed_var(bin(proplists:get_value(topic, Opts)), Opts).
@@ -1274,6 +1374,7 @@ loop_opts(Opts) ->
                                          , qos
                                          , retain
                                          , topic
+                                         , multi_topic
                                          , client_id
                                          , username
                                          , lowmem
