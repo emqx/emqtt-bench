@@ -1091,7 +1091,6 @@ unsub_delay(Opts) ->
 bump_subscribe_attempt_counter(topic, _Topics) ->
     ok;
 bump_subscribe_attempt_counter(multi_topic, Topics) ->
-    io:format("Subscribed to ~p~n", [Topics]),
     case get(success_subscribe_count) of
         undefined ->
             put(success_subscribe_count, 1),
@@ -1111,7 +1110,6 @@ bump_unsubscribe_attempt_counter() ->
             Count = Val + 1,
             put(success_unsubscribe_count, Count),
             Topics = erase({?multi_topic, Count}),
-            io:format("Unsubscribed to ~p~n", [Topics]),
             Topics
     end.
 
