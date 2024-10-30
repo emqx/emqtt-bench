@@ -819,7 +819,6 @@ maybe_retry(Parent, N, PubSub, Opts, ContinueFn) ->
 loop(Parent, N, Client, PubSub, Opts) ->
     Interval = proplists:get_value(interval_of_msg, Opts, 0),
     Prometheus = lists:member(prometheus, Opts),
-    Idle = max(Interval * 2, 500),
     MRef = proplists:get_value(publish_signal_mref, Opts),
     receive
         {'DOWN', MRef, process, _Pid, start_publishing} ->
@@ -920,7 +919,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
             io:format("client(~w): discarded unknown message ~p~n", [N, Other]),
             loop(Parent, N, Client, PubSub, Opts)
     after
-        Idle ->
+        _Idle = max(Interval * 2, 50) ->
             case proplists:get_bool(lowmem, Opts) of
                 true ->
                     erlang:garbage_collect(Client, [{type, major}]),
