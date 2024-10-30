@@ -184,8 +184,10 @@
          {multi_topic, undefined, "multi-topic", boolean,
           "Lot number of topics to subscribe to. Topic name are randomly generated. "
           "Mutually exclusive with -t or --topic"},
-         {multi_topic_count, undefined, "multi-topic-count", {integer, 1000},
-          "Number of topics to subscribe to for --multi-topic. Default: 1000"},
+         {multi_topic_count, undefined, "multi-topic-count", {integer, 500},
+          "Number of topics to subscribe to for --multi-topic. Default: 500"},
+         {sub_delay, undefined, "sub-delay", {integer, 120},
+          "Specifies the delay interval (in seconds) before initiating the --multi-topic subscribing. Default: 120. "},
          {unsub_delay, undefined, "unsub-delay", {integer, 120},
           "Specifies the delay interval (in seconds) before initiating the unsubscribe process after all topics "
           "have been successfully subscribed. This delay allows for a pause between the completion of "
@@ -760,7 +762,8 @@ connect(Parent, N, PubSub, Opts) ->
                     sub -> case proplists:get_value(multi_topic, Opts, undefined) of
                                %% hardcoded as 200ms (5 subscribe per second)
                                true ->
-                                   erlang:send_after(200, self(), {subscribe, multi_topic}),
+                                   %% start subscribe after 120s by default
+                                   erlang:send_after(sub_delay(Opts), self(), {subscribe, multi_topic}),
                                    ok;
                                undefined ->
                                    erlang:send_after(200, self(), subscribe),
@@ -851,7 +854,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {subscribe, multi_topic} = Trigger ->
             case subscribe(Client, N, Opts) of
                 {ok, _Props, _RCs} ->
-                    ok = schedule_next_subscribe(Trigger, Opts),
+                    ok = schedule_next_subscribe(Trigger, Opts, N),
                     ok;
                 {error, _Reason} ->
                     exit({error, sub_multi_topic_failed})
@@ -860,7 +863,7 @@ loop(Parent, N, Client, PubSub, Opts) ->
         {unsubscribe, multi_topic} = Trigger ->
             case unsubscribe(Client, N, Opts) of
                 {ok, _Props, _RCs} ->
-                    ok = schedule_next_unsubscribe(Trigger, Opts),
+                    ok = schedule_next_unsubscribe(Trigger, Opts, N),
                     ok;
                 {error, _Reason} ->
                     exit({error, unsub_multi_topic_failed})
@@ -1021,7 +1024,7 @@ do_subscribe(Client, N, Opts, SubMode, Topics) ->
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- Topics]),
     case Res of
        {ok, _, _} ->
-            _ = bump_subscribe_attempt_counter(SubMode, Topics),
+            _ = bump_subscribe_attempt_counter(SubMode, Topics, N),
             case proplists:get_value(qoe, emqtt:info(Client), false) of
                 false ->
                     ok;
@@ -1043,11 +1046,12 @@ do_subscribe(Client, N, Opts, SubMode, Topics) ->
     end,
     Res.
 
--define(MULTI_TOPIC_COUNT, 1000). %% 1000 random topics
+-define(MULTI_TOPIC_COUNT, 500). %% 500 random topics per client
 -define(MULTI_TOPIC_SUB_INTERVAL, 200). %% 200ms
 -define(MULTI_TOPIC_UNSUB_INTERVAL, 200). %% 200ms
+-define(MULTI_TOPIC_SUB_DELAY, 120 * 1000). %% 120s
 -define(MULTI_TOPIC_UNSUB_DELAY, 120 * 1000). %% 120s
-schedule_next_subscribe({subscribe, multi_topic} = Trigger, Opts) ->
+schedule_next_subscribe({subscribe, multi_topic} = Trigger, Opts, N) ->
     UnsubDelay = unsub_delay(Opts),
     MultiTopicCount = multi_topic_count(Opts),
     case get(success_subscribe_count) of
@@ -1055,6 +1059,7 @@ schedule_next_subscribe({subscribe, multi_topic} = Trigger, Opts) ->
             erlang:send_after(?MULTI_TOPIC_SUB_INTERVAL, self(), Trigger),
             ok;
         Num when Num >= MultiTopicCount ->
+            io:format("Client(~w): end Subscribing multi_topics~n", [N]),
             erlang:send_after(UnsubDelay, self(), {unsubscribe, multi_topic}),
             ok
     end.
@@ -1067,32 +1072,37 @@ generate_hex_string(Length) ->
     HexString = lists:flatten([io_lib:format("~2.16.0b", [B]) || B <- binary:bin_to_list(RandomBytes)]),
     string:substr(HexString, 1, Length).
 
-unsubscribe(Client, _N, _Opts) ->
-    Topics = bump_unsubscribe_attempt_counter(),
+unsubscribe(Client, N, _Opts) ->
+    Topics = bump_unsubscribe_attempt_counter(N),
     emqtt:unsubscribe(Client, Topics).
 
-schedule_next_unsubscribe(Trigger, Opts) ->
+schedule_next_unsubscribe(Trigger, Opts, N) ->
     MultiTopicCount = multi_topic_count(Opts),
     case get(success_unsubscribe_count) of
         Num when Num < MultiTopicCount ->
             erlang:send_after(?MULTI_TOPIC_UNSUB_INTERVAL, self(), Trigger),
             ok;
         _ ->
+            io:format("Client(~w): end Unsubscribing multi_topics~n", [N]),
             ok
     end.
 
 multi_topic_count(Opts) ->
     proplists:get_value(multi_topic_count, Opts, ?MULTI_TOPIC_COUNT).
 
+sub_delay(Opts) ->
+    1000 * proplists:get_value(sub_delay, Opts, ?MULTI_TOPIC_SUB_DELAY).
+
 unsub_delay(Opts) ->
     1000 * proplists:get_value(unsub_delay, Opts, ?MULTI_TOPIC_UNSUB_DELAY).
 
 -define(multi_topic, '$multi_topic').
-bump_subscribe_attempt_counter(topic, _Topics) ->
+bump_subscribe_attempt_counter(topic, _Topics, _N) ->
     ok;
-bump_subscribe_attempt_counter(multi_topic, Topics) ->
+bump_subscribe_attempt_counter(multi_topic, Topics, N) ->
     case get(success_subscribe_count) of
         undefined ->
+            io:format("Client(~w): start Subscribing multi_topics~n", [N]),
             put(success_subscribe_count, 1),
             put({?multi_topic, 1}, Topics);
         Val ->
@@ -1101,9 +1111,10 @@ bump_subscribe_attempt_counter(multi_topic, Topics) ->
             put({?multi_topic, Count}, Topics)
     end.
 
-bump_unsubscribe_attempt_counter() ->
+bump_unsubscribe_attempt_counter(N) ->
     case get(success_unsubscribe_count) of
         undefined ->
+            io:format("Client(~w): start Unsubscribing multi_topics~n", [N]),
             put(success_unsubscribe_count, 1),
             erase({?multi_topic, 1});
         Val ->
