@@ -3,10 +3,16 @@ REBAR ?= $(CURDIR)/rebar3
 .PHONY: all
 all: release
 
+.PHONY: release
 release: compile
 	$(REBAR) as emqtt_bench tar
 	@$(CURDIR)/scripts/rename-package.sh
 
+.PHONY: pre-release
+pre-release: compile
+	$(REBAR) as emqtt_bench release
+
+.PHONY: compile
 compile: $(REBAR)
 	$(REBAR) compile
 
