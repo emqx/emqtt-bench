@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.4.26
+
+* Upgrade emqtt to 1.13.4 so initial CONNECT packet send failures will not cause client to shutdown/crash.
+
 ## 0.4.13
 
 * Add `--retry-interval` option to `pub` command and use `0` as default value (0 means disable resend).
