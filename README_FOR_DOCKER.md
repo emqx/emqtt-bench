@@ -30,7 +30,7 @@ Usage: emqtt_bench conn [--help <help>] [-h [<host>]] [-p [<port>]]
   -P, --password     password for connecting to server
   -k, --keepalive    keep alive in seconds [default: 300]
   -C, --clean        clean session [default: true]
-  -S, --ssl          ssl socoket for connecting to server [default: false]
+  -S, --ssl          ssl socket for connecting to server [default: false]
   --certfile         client certificate for authentication, if required by
                      server
   --keyfile          client private key for authentication, if required by
@@ -70,14 +70,14 @@ Usage: emqtt_bench sub [--help <help>] [-h [<host>]] [-p [<port>]]
   -P, --password     password for connecting to server
   -k, --keepalive    keep alive in seconds [default: 300]
   -C, --clean        clean start [default: true]
-  -S, --ssl          ssl socoket for connecting to server [default: false]
+  -S, --ssl          ssl socket for connecting to server [default: false]
   --certfile         client certificate for authentication, if required by server
   --keyfile          client private key for authentication, if required by server
   --ws               websocket transport [default: false]
   --ifaddr           local ipaddress or interface address
 ```
 
-For example, create 50K concurrent connections at the arrival rate of 100/sec: 
+For example, create 50K concurrent connections at the arrival rate of 100/sec:
 
 ```sh
 docker run -it emqtt_bench sub -c 50000 -i 10 -t bench/%i -q 2
@@ -113,7 +113,7 @@ Usage: emqtt_bench pub [--help <help>] [-h [<host>]] [-p [<port>]]
   -r, --retain           retain message [default: false]
   -k, --keepalive        keep alive in seconds [default: 300]
   -C, --clean            clean start [default: true]
-  -S, --ssl              ssl socoket for connecting to server [default: false]
+  -S, --ssl              ssl socket for connecting to server [default: false]
   --certfile             client certificate for authentication, if required by server
   --keyfile              client private key for authentication, if required by server
   --ws                   websocket transport [default: false]
