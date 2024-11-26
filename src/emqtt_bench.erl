@@ -106,6 +106,8 @@
           "The max message count to publish, 0 means unlimited"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+         {cacertfile, undefined, "cacertfile", string,
+          "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -200,6 +202,8 @@
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+         {cacertfile, undefined, "cacertfile", string,
+          "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -268,6 +272,8 @@
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
           "ssl socoket for connecting to server"},
+         {cacertfile, undefined, "cacertfile", string,
+          "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
@@ -1091,6 +1097,8 @@ ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
     ssl_opts(Opts, [{keyfile, KeyFile}|Acc]);
 ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
+ssl_opts([{cacertfile, CaCertFile} | Opts], Acc) ->
+    ssl_opts(Opts, [{cacertfile, CaCertFile}|Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
 
