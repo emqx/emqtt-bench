@@ -47,7 +47,7 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]]
                         [-n [<startnumber>]] [--load-qst <nst_dets_file>]
                         [-Q [<qoe>]] [-i [<interval>]] [-u <username>]
                         [-P <password>] [-k [<keepalive>]] [-C [<clean>]]
-                        [-x [<expiry>]] [-S [<ssl>]]
+                        [-x [<expiry>]] [-S [<ssl>]] [--cacertfile <cacertfile>]
                         [--certfile <certfile>] [--keyfile <keyfile>]
                         [--quic [<quic>]] [--ifaddr <ifaddr>]
                         [--prefix <prefix>] [-s [<shortids>]]
@@ -78,6 +78,7 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]]
                              (seconds) [default: 0]
   -S, --ssl                  ssl socket for connecting to server
                              [default: false]
+  --cacertfile               CA certificate for server verification
   --certfile                 client certificate for authentication, if
                              required by server
   --keyfile                  client private key for authentication, if
@@ -123,7 +124,8 @@ $ ./emqtt_bench sub --help
 Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [-V [<version>]] [-c [<count>]]
                        [-n [<startnumber>]] [-i [<interval>]] [-t <topic>] [--payload-hdrs [<payload_hdrs>]] [-q [<qos>]]
                        [-Q [<qoe>]] [-u <username>] [-P <password>] [-k [<keepalive>]] [-C [<clean>]] [-x [<expiry>]]
-                       [-S [<ssl>]] [--certfile <certfile>] [--keyfile <keyfile>] [--ws [<ws>]] [--quic [<quic>]]
+                       [-S [<ssl>]] [--cacertfile <cacertfile>] [--certfile <certfile>] [--keyfile <keyfile>]
+                       [--ws [<ws>]] [--quic [<quic>]]
                        [--load-qst <nst_dets_file>] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]] [-l <lowmem>]
                        [--num-retry-connect [<num_retry_connect>]] [-R [<conn_rate>]]
                        [--force-major-gc-interval [<force_major_gc_interval>]] [--log_to [<log_to>]]
@@ -152,6 +154,7 @@ Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
   -C, --clean                clean start [default: true]
   -x, --session-expiry       Set 'Session-Expiry' for persistent sessions (seconds) [default: 0]
   -S, --ssl                  ssl socket for connecting to server [default: false]
+  --cacertfile               CA certificate for server verification
   --certfile                 client certificate for authentication, if required by server
   --keyfile                  client private key for authentication, if required by server
   --ws                       websocket transport [default: false]
@@ -195,7 +198,8 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                        [-n [<startnumber>]] [-i [<interval>]] [-I [<interval_of_msg>]] [-u <username>] [-P <password>]
                        [-t <topic>] [--payload-hdrs [<payload_hdrs>]] [-s [<size>]] [-m <message>] [-q [<qos>]]
                        [-Q [<qoe>]] [-r [<retain>]] [-k [<keepalive>]] [-C [<clean>]] [-x [<expiry>]] [-L [<limit>]]
-                       [-S [<ssl>]] [--certfile <certfile>] [--keyfile <keyfile>] [--ws [<ws>]] [--quic [<quic>]]
+                       [-S [<ssl>]] [--cacertfile <cacertfile>] [--certfile <certfile>] [--keyfile <keyfile>]
+                       [--ws [<ws>]] [--quic [<quic>]]
                        [--load-qst <nst_dets_file>] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]] [-l <lowmem>]
                        [-F [<inflight>]] [-w [<wait_before_publishing>]] [--max-random-wait [<max_random_wait>]]
                        [--min-random-wait [<min_random_wait>]] [--num-retry-connect [<num_retry_connect>]]
@@ -229,6 +233,7 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
   -x, --session-expiry          Set 'Session-Expiry' for persistent sessions (seconds) [default: 0]
   -L, --limit                   The max message count to publish, 0 means unlimited [default: 0]
   -S, --ssl                     ssl socket for connecting to server [default: false]
+  --cacertfile                  CA certificate for server verification
   --certfile                    client certificate for authentication, if required by server
   --keyfile                     client private key for authentication, if required by server
   --ws                          websocket transport [default: false]
