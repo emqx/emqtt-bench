@@ -105,7 +105,7 @@
          {limit, $L, "limit", {integer, 0},
           "The max message count to publish, 0 means unlimited"},
          {ssl, $S, "ssl", {boolean, false},
-          "ssl socoket for connecting to server"},
+          "ssl socket for connecting to server"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
@@ -201,7 +201,7 @@
          {expiry, $x, "session-expiry", {integer, 0},
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
-          "ssl socoket for connecting to server"},
+          "ssl socket for connecting to server"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
@@ -271,7 +271,7 @@
          {expiry, $x, "session-expiry", {integer, 0},
           "Set 'Session-Expiry' for persistent sessions (seconds)"},
          {ssl, $S, "ssl", {boolean, false},
-          "ssl socoket for connecting to server"},
+          "ssl socket for connecting to server"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
@@ -1492,7 +1492,7 @@ maybe_start_restapi(disabled) ->
 maybe_start_restapi("disabled") ->
     ok;
 maybe_start_restapi(RestAPI) ->
-    {IP, Port} = 
+    {IP, Port} =
         case string:split(RestAPI, ":") of
             [IP0, Port0] ->
                 {Port1, _} = string:to_integer(Port0),
