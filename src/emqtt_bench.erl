@@ -390,8 +390,8 @@ main(conn, Opts) ->
     start(conn, Opts).
 
 start(PubSub, Opts) ->
-    ets:new(qoe_store, [named_table, public, ordered_set]),
-    prepare(PubSub, Opts), init(),
+    prepare(PubSub, Opts),
+    init(),
     maybe_init_prometheus(lists:member(prometheus, Opts)),
     maybe_start_restapi(proplists:get_value(restapi, Opts)),
     IfAddr = proplists:get_value(ifaddr, Opts),
@@ -473,17 +473,12 @@ prepare(PubSub, Opts) ->
         false ->
             ok
     end,
-    case is_quic(Opts) of
-        true ->
-          maybe_start_quicer() orelse error({quic, not_supp_or_disabled}),
-          prepare_for_quic(Opts);
-        _ ->
-            ok
-    end,
+    prepare_quicer(Opts),
     application:ensure_all_started(emqtt_bench).
 
 init() ->
     process_flag(trap_exit, true),
+    ets:new(qoe_store, [named_table, public, ordered_set]),
     Now = erlang:monotonic_time(millisecond),
     Counters = counters(),
     CRef = counters:new(length(Counters)+1, [write_concurrency]),
@@ -1342,8 +1337,8 @@ percentile(Input, P) ->
    Pos = ceil(Len * P),
    lists:nth(Pos, lists:sort(Input)).
 
--spec prepare_for_quic(proplists:proplist()) -> ok | skip.
-prepare_for_quic(Opts)->
+-spec prepare_quic_nst(proplists:proplist()) -> ok | skip.
+prepare_quic_nst(Opts)->
    %% Create ets table for 0-RTT session tickets
    ets:new(quic_clients_nsts, [named_table, public, ordered_set,
                                {write_concurrency, true},
@@ -1617,10 +1612,10 @@ maybe_prefix_payload(Payload, ClientOpts) ->
 
 -spec is_quic(proplists:proplist()) -> boolean().
 is_quic(Opts) ->
-   proplists:get_value(quic, Opts, false) =/= false.
+   proplists:get_value(quic, Opts) =/= false.
 
 quic_opts_from_arg(Opts)->
-   case proplists:get_value(quic, Opts, false) of
+   case proplists:get_value(quic, Opts) of
       V when is_boolean(V) ->
          V;
       "false" ->
@@ -1639,4 +1634,13 @@ quic_opts_from_arg(Opts)->
             _ ->
                error("bad --quic")
          end
+   end.
+
+prepare_quicer(Opts) ->
+   case quic_opts_from_arg(Opts) =/= false of
+      true ->
+         maybe_start_quicer() orelse error({quic, not_supp_or_disabled}),
+         prepare_quic_nst(Opts);
+      _ ->
+         ok
    end.
