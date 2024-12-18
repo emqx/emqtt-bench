@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.4.27
+
+* Add bench `cacertfile` option for completeness.
+
 ## 0.4.26
 
 * Upgrade emqtt to 1.13.4 so initial CONNECT packet send failures will not cause client to shutdown/crash.
