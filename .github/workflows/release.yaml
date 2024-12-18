@@ -65,7 +65,6 @@ jobs:
           - 1.15.7
         quic_support:
           - true
-          - false
         os:
           - ubuntu22.04
           - ubuntu20.04
