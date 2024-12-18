@@ -1,4 +1,6 @@
 # emqtt-bench changelog
+## 0.4.28
+* release: fix and re-enable no-quic build
 
 ## 0.4.27
 
