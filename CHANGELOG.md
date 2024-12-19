@@ -2,6 +2,10 @@
 ## 0.4.28
 * release: fix and re-enable no-quic build
 
+## 0.4.28
+
+* Fix OOM issue.
+
 ## 0.4.27
 
 * Add bench `cacertfile` option for completeness.
