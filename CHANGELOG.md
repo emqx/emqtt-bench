@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.4.28
+
+* Fix OOM issue.
+
 ## 0.4.27
 
 * Add bench `cacertfile` option for completeness.
