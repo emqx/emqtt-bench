@@ -645,7 +645,7 @@ run(Parent, I, N, PubSub, Opts0, AddrList, HostList) ->
     ID = I + 1 + proplists:get_value(startnumber, Opts),
     spawn_opt(?MODULE, connect, [Parent, ID, PubSub, Opts], SpawnOpts),
     timer:sleep(proplists:get_value(interval, Opts)),
-    run(Parent, I + 1, N, PubSub, Opts, AddrList, HostList).
+    run(Parent, I + 1, N, PubSub, Opts0, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
     process_flag(trap_exit, true),
