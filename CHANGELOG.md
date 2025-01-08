@@ -1,10 +1,17 @@
 # emqtt-bench changelog
 
+## 0.4.30
+
+* Enhanced QoE trackings, add supports for commands `conn` and `pub`.
+* Write QoE event logs to disklog for post processing with `--qoe true --qoelog logfile`
+* Dump QoE disklog to csv file with combined opts `--qoe dump --qoelog logfile`
+  
 ## 0.4.29
 
 * Fix OOM issue.
 
 ## 0.4.28
+
 * release: fix and re-enable no-quic build
 
 ## 0.4.27
