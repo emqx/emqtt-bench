@@ -425,8 +425,8 @@ maybe_sum_qoe(Count) ->
 do_print_qoe([]) ->
    skip;
 do_print_qoe(Data) ->
-   {H, C, S} = lists:foldl(fun({_Client, {_, H1, C1, S1}}, {H, C, S}) ->
-                                 {[H1 | H], [C1 | C], [S1 | S]}
+   {H, C, S} = lists:foldl(fun({_Client, {_, T1, H1, C1, S1}}, {T, H, C, S}) ->
+                                 {[T1, T] , [H1 | H], [C1 | C], [S1 | S]}
                            end, {[], [], []}, Data),
    lists:foreach(
      fun({_Name, []})-> skip;
@@ -1291,6 +1291,10 @@ maybe_init_prometheus(true) ->
       fun(Cnt) ->
               prometheus_counter:declare([{name, Cnt}, {help, atom_to_list(Cnt)}])
       end, Counters),
+    prometheus_histogram:declare([{name, mqtt_client_tcp_handshake_duration},
+                                  {labels, []},
+                                  {buckets, [1, 3, 5, 10, 20]},
+                                  {help, "TCP Handshake duration of MQTT client"}]),
     prometheus_histogram:declare([{name, mqtt_client_handshake_duration},
                                   {labels, []},
                                   {buckets, [1, 3, 5, 10, 20]},
@@ -1556,10 +1560,19 @@ qoe_store_insert(Prometheus,
                    SubTs ->
                       SubTs - StartTs
                 end,
+
+   ElapsedTCPHS = case maps:get(tcp_connected_at, QoE, undefined) of
+                   undefined ->
+                      %% invalid
+                      ?invalid_elapsed;
+                   TCPTs ->
+                      TCPTs - StartTs
+                end,
+   histogram_observe(Prometheus, mqtt_client_tcp_handshake_duration, ElapsedTCPHS),
    histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
    histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
    histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
-   Term = {ClientId, {StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub}},
+   Term = {ClientId, {StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub}},
    true = ets:insert(qoe_store, Term),
    ok.
 
@@ -1605,12 +1618,12 @@ qoe_disklog_to_csv(File) ->
    TargetFile = File++".csv",
    {ok, CsvH} = file:open(TargetFile, [write]),
    io:format("No execution, just dumping QoE dlog to csv file: ~p~n", [TargetFile]),
-   file:write(CsvH, "ClientId,TS,Handshake,Connect,Subscribe\n"),
+   file:write(CsvH, "ClientId,TS,TCP,Handshake,Connect,Subscribe\n"),
    Writer = fun(Terms) ->
                   Lines = lists:map(
-                            fun([ClientId, TS, Handshake, Connect, Subscribe]) ->
-                                  io_lib:format("~s,~p,~p,~p,~p~n",
-                                                [ClientId, TS, Handshake, Connect, Subscribe])
+                            fun([ClientId, TS, TCP, Handshake, Connect, Subscribe]) ->
+                                  io_lib:format("~s,~p,~p,~p,~p,~p~n",
+                                                [ClientId, TS, TCP, Handshake, Connect, Subscribe])
                             end, Terms),
                   file:write(CsvH, Lines)
             end,
@@ -1632,6 +1645,7 @@ do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
 maybe_dlog_qoe(Data) ->
    Offset = erlang:time_offset(millisecond),
    DLog = [ [ClientId, Offset + StartTs,
+             ElaspedTCPHS,
              ElapsedHandshake, ElapsedConn, ElapsedSub]
-            || {ClientId, {StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub}} <- Data],
+            || {ClientId, {StartTs, ElaspedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub}} <- Data],
    ok = disk_log:log_terms(?QoELog, DLog).
