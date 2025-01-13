@@ -196,6 +196,18 @@
 -define(hdr_ts, "ts").
 -define(GO_SIGNAL, go).
 
+%% client_id used in QoE tracking, not readable if QoE tracking is off
+-define(qoe_client_id, qoe_client_id).
+
+-define(invalid_elapsed, -1).
+-record(qoe_rec_v2, { key :: {ClientId::binary(), Ts:: timer:time()},
+                      tcp_lat = ?invalid_elapsed,
+                      handshake_lat = ?invalid_elapsed,
+                      connect_lat = ?invalid_elapsed,
+                      subscribe_lat = ?invalid_elapsed,
+                      publish_lat = ?invalid_elapsed
+                    }).
+
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
     ok = maybe_help(sub, Opts),
@@ -383,7 +395,7 @@ main_loop(Uptime, Count) ->
             return_print("publish complete~n", []);
         stats ->
             print_stats(Uptime),
-            maybe_sum_qoe(Count),
+            maybe_sum_qoe(),
             maybe_dump_nst_dets(Count),
             garbage_collect(),
             main_loop(Uptime, Count);
@@ -397,43 +409,50 @@ maybe_dump_nst_dets(Count)->
       andalso undefined =/= dets:info(dets_quic_nsts)
       andalso ets:to_dets(quic_clients_nsts, dets_quic_nsts).
 
-maybe_sum_qoe(Count) ->
+maybe_sum_qoe() ->
    %% latency statistic for
    %% - handshake
    %% - conn
    %% - sub
-   case get(is_qoe_dlog) of
-      true ->
-         Data = ets:tab2list(qoe_store),
-         maybe_dlog_qoe(Data),
-         lists:foreach(fun({ClientId, _}) ->
-                             ets:delete(qoe_store, ClientId)
-                       end, Data);
+   case persistent_term:get(is_qoe) of
       false ->
-         case Count == ets:info(qoe_store, size) of
-            true ->
-               do_print_qoe(Data = ets:tab2list(qoe_store)),
-               %% clear to print once
-               lists:foreach(fun({ClientId, _}) ->
-                                   ets:delete(qoe_store, ClientId)
-                             end, Data);
-            false ->
-               skip
-         end
+           ok;
+      log ->
+           with_qoe_data(fun maybe_dlog_qoe/1);
+      true ->
+           with_qoe_data(fun do_print_qoe/1)
+
    end.
+
+with_qoe_data(Fun) ->
+    Data = ets:tab2list(qoe_store),
+    Fun(Data),
+    lists:foreach(fun(#qoe_rec_v2{key = Key}) ->
+                          ets:delete(qoe_store, Key)
+                  end, Data).
 
 do_print_qoe([]) ->
    skip;
 do_print_qoe(Data) ->
-   {H, C, S} = lists:foldl(fun({_Client, {_, T1, H1, C1, S1}}, {T, H, C, S}) ->
-                                 {[T1, T] , [H1 | H], [C1 | C], [S1 | S]}
-                           end, {[], [], []}, Data),
+    {T, H, C, S, P} = lists:foldl(fun(#qoe_rec_v2{tcp_lat = T1,
+                                                  handshake_lat = H1,
+                                                  connect_lat = C1,
+                                                  subscribe_lat = S1,
+                                                  publish_lat = P1
+                                                 },
+                                      {T, H, C, S, P}) ->
+                                          {[T1 | T] , [H1 | H], [C1 | C], [S1 | S], [P1 | P]}
+                                  end, {[], [], [], [], []}, Data),
    lists:foreach(
      fun({_Name, []})-> skip;
         ({Name, X}) ->
-           io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
-                     [Name, lists:sum(X)/length(X), p95(X), lists:max(X)])
-     end, [{handshake, H}, {connect, C}, {subscribe, S}]).
+           case lists:max(X) of
+               ?invalid_elapsed -> skip;
+               Max ->
+                   io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
+                             [Name, lists:sum(X)/length(X), p95(X), Max])
+           end
+     end, [{tcp, T}, {handshake, H}, {connect, C}, {subscribe, S}, {publish, P}]).
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
@@ -1321,6 +1340,7 @@ maybe_check_payload_hdrs(Prometheus, << TS:64/integer, BinL/binary >>, [?hdr_ts 
    E2ELatency = os:system_time(millisecond) - TS,
    E2ELatency > 0 andalso inc_counter(Prometheus, publish_latency, E2ELatency),
    E2ELatency > 0 andalso histogram_observe(Prometheus, e2e_latency, E2ELatency),
+   maybe_dlog_pub_qoe(E2ELatency),
    maybe_check_payload_hdrs(Prometheus, BinL, RL);
 maybe_check_payload_hdrs(Prometheus, << Cnt:64/integer, BinL/binary >>, [?hdr_cnt64 | RL]) ->
    case put(payload_hdr_cnt64, Cnt) of
@@ -1541,10 +1561,10 @@ maybe_update_client_qoe(Client, Opts) ->
       QoEMap when is_map(QoEMap) ->
          Prometheus = lists:member(prometheus, Opts),
          ClientId = proplists:get_value(clientid, ClientInfo),
+         put(?qoe_client_id, ClientId),
          qoe_store_insert(Prometheus, ClientId, QoEMap)
    end.
 
--define(invalid_elapsed, -1).
 qoe_store_insert(Prometheus,
                  ClientId,
                  #{ initialized := StartTs
@@ -1572,16 +1592,24 @@ qoe_store_insert(Prometheus,
    histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
    histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
    histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
-   Term = {ClientId, {StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub}},
+
+   Offset = erlang:time_offset(millisecond),
+   Term = #qoe_rec_v2{key = {ClientId, Offset + StartTs},
+                      tcp_lat = ElapsedTCPHS,
+                      handshake_lat = ElapsedHandshake,
+                      connect_lat = ElapsedConn,
+                      subscribe_lat = ElapsedSub
+                      },
    true = ets:insert(qoe_store, Term),
    ok.
 
 init_qoe(Opts) ->
-   put(is_qoe_dlog, false),
    case proplists:get_value(qoe, Opts) of
       false ->
+         persistent_term:put(is_qoe, false),
          skip;
       dump ->
+         persistent_term:put(is_qoe, log),
          case proplists:get_value(qoelog, Opts) of
             "" ->
                error("qoelog not specified");
@@ -1592,13 +1620,14 @@ init_qoe(Opts) ->
                erlang:halt()
           end;
       true ->
-         ets:new(qoe_store, [named_table, public, set]),
+         ets:new(qoe_store, [named_table, public, set, {write_concurrency, true}, {keypos, 2}]),
          %% QoE disk Log file
          case proplists:get_value(qoelog, Opts) of
             "" ->
+               persistent_term:put(is_qoe, true),
                skip;
             File ->
-               put(is_qoe_dlog, true),
+               persistent_term:put(is_qoe, log),
                open_qoe_disklog(File)
          end
       end.
@@ -1618,17 +1647,31 @@ qoe_disklog_to_csv(File) ->
    TargetFile = File++".csv",
    {ok, CsvH} = file:open(TargetFile, [write]),
    io:format("No execution, just dumping QoE dlog to csv file: ~p~n", [TargetFile]),
-   file:write(CsvH, "ClientId,TS,TCP,Handshake,Connect,Subscribe\n"),
+   file:write(CsvH, "ClientId,TS,TCP,Handshake,Connect,Subscribe,Publish\n"),
    Writer = fun(Terms) ->
                   Lines = lists:map(
-                            fun([ClientId, TS, TCP, Handshake, Connect, Subscribe]) ->
-                                  io_lib:format("~s,~p,~p,~p,~p,~p~n",
-                                                [ClientId, TS, TCP, Handshake, Connect, Subscribe])
+                            fun(Term) ->
+                                    io_lib:format("~s,~p,~p,~p,~p,~p,~p~n",
+                                                to_fmt_args(Term))
                             end, Terms),
                   file:write(CsvH, Lines)
             end,
    do_qoe_disklog_to_csv(?QoELog, start, Writer),
    file:close(CsvH).
+
+to_fmt_args(#qoe_rec_v2{
+                       key = {ClientId, StartTs},
+                       tcp_lat = ElapsedTCPHS,
+                       handshake_lat = ElapsedHandshake,
+                       connect_lat = ElapsedConn,
+                       subscribe_lat = ElapsedSub,
+                       publish_lat = ElapsedPub
+                      }) ->
+    [ClientId, StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, ElapsedPub];
+to_fmt_args([ClientId, StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub]) ->
+    _ElapsedTCPHS = ?invalid_elapsed,
+    _ElapsedPub = ?invalid_elapsed,
+    [ClientId, StartTs, _ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, _ElapsedPub].
 
 do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
    case disk_log:chunk(Log, Cont0) of
@@ -1643,9 +1686,11 @@ do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
    end.
 
 maybe_dlog_qoe(Data) ->
-   Offset = erlang:time_offset(millisecond),
-   DLog = [ [ClientId, Offset + StartTs,
-             ElaspedTCPHS,
-             ElapsedHandshake, ElapsedConn, ElapsedSub]
-            || {ClientId, {StartTs, ElaspedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub}} <- Data],
-   ok = disk_log:log_terms(?QoELog, DLog).
+    ok = disk_log:log_terms(?QoELog, Data).
+
+maybe_dlog_pub_qoe(Elapsed) ->
+    ClientId = get(?qoe_client_id),
+    true = (ClientId =/= undefined),
+    Term = #qoe_rec_v2{key = {ClientId, os:system_time(millisecond)},
+                       publish_lat = Elapsed},
+    true = ets:insert(qoe_store, Term).
