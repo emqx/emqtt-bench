@@ -76,7 +76,7 @@
          {reconnect, undefined, "reconnect", {integer, 0},
           "max retries of reconnects. 0: disabled"},
          %% == Transport: TCP, TLS, QUIC, WS ==
-         {ssl, $S, "ssl", {boolean, false},
+         {ssl, $S, "ssl", {atom, false},
           "ssl socket for connecting to server"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
@@ -604,6 +604,7 @@ connect(Parent, N, PubSub, Opts) ->
     case ConnRet of
         {ok, _Props} ->
             inc_counter(Prometheus, connect_succ),
+            maybe_record_keylogfile(Client),
             Res =
                 case PubSub of
                     conn ->
@@ -950,8 +951,13 @@ mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_start, Bool}|Acc]);
 mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
-mqtt_opts([{ssl, Bool}|Opts], Acc) ->
+mqtt_opts([{ssl, Bool}|Opts], Acc) when is_boolean(Bool) ->
     mqtt_opts(Opts, [{ssl, Bool}|Acc]);
+mqtt_opts([{ssl, Ver}|Opts], Acc) when Ver == tlsv1;
+                                       Ver == 'tlsv1.1';
+                                       Ver == 'tlsv1.2';
+                                       Ver == 'tlsv1.3' ->
+    mqtt_opts(Opts, [{ssl, true}, {ssl_versions, [Ver]}|Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([{qoe, Bool}|Opts], Acc) ->
@@ -986,7 +992,7 @@ tcp_opts([_|Opts], Acc) ->
     tcp_opts(Opts, Acc).
 
 ssl_opts(Opts) ->
-    ssl_opts(Opts, [{verify, verify_none}]).
+    ssl_opts(Opts, init_ssl_opts()).
 ssl_opts([], Acc) ->
     [{ciphers, all_ssl_ciphers()} | Acc];
 ssl_opts([{host, Host} | Opts], Acc) ->
@@ -997,8 +1003,19 @@ ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([{cacertfile, CaCertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{cacertfile, CaCertFile}|Acc]);
+ssl_opts([{ssl_versions, Vsns} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, Vsns}|Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
+
+init_ssl_opts() ->
+    Default = [{verify, verify_none}],
+    case os:getenv("SSLKEYLOGFILE") of
+        false ->
+            Default;
+        V when is_list(V)->
+            [ {keep_secrets, true} | Default]
+    end.
 
 all_ssl_ciphers() ->
     Vers = ['tlsv1', 'tlsv1.1', 'tlsv1.2', 'tlsv1.3'],
@@ -1694,3 +1711,15 @@ maybe_dlog_pub_qoe(Elapsed) ->
     Term = #qoe_rec_v2{key = {ClientId, os:system_time(millisecond)},
                        publish_lat = Elapsed},
     true = ets:insert(qoe_store, Term).
+
+maybe_record_keylogfile(Client) when is_pid(Client) ->
+    case os:getenv("SSLKEYLOGFILE") of
+        false ->
+            ok;
+        Keylogpath ->
+            {_,_,S} = proplists:get_value(socket, emqtt:info(Client)),
+            {ok, [{keylog, Keylog}]} = ssl:connection_information(S, [keylog]),
+            Lines = lists:map(fun(Line) -> [Line, "\n"] end, Keylog),
+            ok = file:write_file(Keylogpath, Lines),
+            ok
+    end.
