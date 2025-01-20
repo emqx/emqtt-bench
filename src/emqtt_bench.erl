@@ -913,8 +913,9 @@ mqtt_opts([{ssl, Bool}|Opts], Acc) when is_boolean(Bool) ->
 mqtt_opts([{ssl, Ver}|Opts], Acc) when Ver == tlsv1;
                                        Ver == 'tlsv1.1';
                                        Ver == 'tlsv1.2';
+                                       Ver == 'tlsv1.3_nocompat';
                                        Ver == 'tlsv1.3' ->
-    mqtt_opts(Opts, [{ssl, true}, {ssl_versions, [Ver]}|Acc]);
+    mqtt_opts(Opts, [{ssl, true} | Acc]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([{qoe, Bool}|Opts], Acc) ->
@@ -960,8 +961,12 @@ ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([{cacertfile, CaCertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{cacertfile, CaCertFile}|Acc]);
-ssl_opts([{ssl_versions, Vsns} | Opts], Acc) ->
-    ssl_opts(Opts, [{versions, Vsns}|Acc]);
+ssl_opts([{ssl, 'tlsv1.3_nocompat'} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, ['tlsv1.3']}, {middlebox_comp_mode, false} | Acc]);
+ssl_opts([{ssl, IsSSL} | Opts], Acc) when is_boolean(IsSSL) ->
+    ssl_opts(Opts, Acc);
+ssl_opts([{ssl, Vsn} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, [Vsn]} | Acc]);
 ssl_opts([{nst_dets_file, DetsFile}| Opts], Acc) ->
     ok = prepare_nst(DetsFile),
     io:format("enable session_tickets~n"),
