@@ -975,6 +975,7 @@ init_ssl_opts() ->
         false ->
             Default;
         V when is_list(V)->
+            persistent_term:put(sslkeylogfile, V),
             [ {keep_secrets, true} | Default]
     end.
 
@@ -1532,15 +1533,22 @@ prepare_quicer(Opts) ->
          ok
    end.
 
+%% @doc write SSL keylog file, for Wireshark TLS decryption.
+%%      SSL only, doesn't work for other transport
+%% @end
+-spec maybe_record_keylogfile(emqtt:client()) -> ok.
 maybe_record_keylogfile(Client) when is_pid(Client) ->
-    case os:getenv("SSLKEYLOGFILE") of
-        false ->
-            ok;
-        Keylogpath ->
-            {_,_,S} = proplists:get_value(socket, emqtt:info(Client)),
-            {ok, [{keylog, Keylog}]} = ssl:connection_information(S, [keylog]),
+     do_write_keylogfile(persistent_term:get(sslkeylogfile, false), Client).
+do_write_keylogfile(false, _Client) ->
+    ok;
+do_write_keylogfile(Keylogpath, Client) ->
+    {_, _, S} = proplists:get_value(socket, emqtt:info(Client)),
+    case ssl:connection_information(S, [keylog]) of
+        {ok, [{keylog, Keylog}]} ->
             Lines = lists:map(fun(Line) -> [Line, "\n"] end, Keylog),
-            ok = file:write_file(Keylogpath, Lines),
+            ok = file:write_file(Keylogpath, Lines, [append]);
+        _ ->
+            io:format("Get keylog failed from ssl:connection_information ~n"),
             ok
     end.
 
