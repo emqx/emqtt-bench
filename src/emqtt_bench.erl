@@ -181,7 +181,7 @@
           "Handle the payload header from received message. "
           "Publish side must have the same option enabled in the same order. "
           "cnt64: Check the counter is strictly increasing. "
-          "ts: publish latency counting."
+          "ts: publish latency counting, could be used for QoE tracking as well"
          },
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"}
