@@ -75,7 +75,7 @@
           "max retries of reconnects. 0: disabled"},
          %% == Transport: TCP, TLS, QUIC, WS ==
          {ssl, $S, "ssl", {atom, false},
-          "ssl socket for connecting to server"},
+          "enable TLS/SSL transport: true | false | 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 'tlsv1.3_nocompat'"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
