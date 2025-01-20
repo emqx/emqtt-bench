@@ -166,7 +166,7 @@
          {min_random_wait, undefined,"min-random-wait", {integer, 0},
           "minimum randomized period in ms that each publisher will wait before "
           "starting to publish (uniform distribution)"},
-         {retry_interval, 0, "retry-interval", {integer, 0},
+         {retry_interval, undefined, "retry-interval", {integer, 0},
           "Publisher's resend interval (in seconds) if the expected "
           "acknowledgement for a inflight packet is not "
           "received within this interval. Default value 0 means no resend."
