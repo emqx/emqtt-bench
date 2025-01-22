@@ -74,8 +74,10 @@
          {reconnect, undefined, "reconnect", {integer, 0},
           "max retries of reconnects. 0: disabled"},
          %% == Transport: TCP, TLS, QUIC, WS ==
-         {ssl, $S, "ssl", {atom, false},
-          "enable TLS/SSL transport: true | false | 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 'tlsv1.3_nocompat'"},
+         {ssl, $S, "ssl", {boolean, false},
+           "ssl socket for connecting to server"},
+         {sslversion, undefined, "ssl-version", atom,
+          "enforce tls version and implies ssl is enabled, 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 'tlsv1.3_nocompat'"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
@@ -919,13 +921,19 @@ mqtt_opts([{clean, Bool}|Opts], Acc) ->
 mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
 mqtt_opts([{ssl, Bool}|Opts], Acc) when is_boolean(Bool) ->
-    mqtt_opts(Opts, [{ssl, Bool}|Acc]);
-mqtt_opts([{ssl, Ver}|Opts], Acc) when Ver == tlsv1;
+    case lists:keymember(ssl, 1, Acc) of
+        false ->
+            mqtt_opts(Opts, [{ssl, Bool} | Acc]);
+        _  ->
+            mqtt_opts(Opts, Acc)
+    end;
+
+mqtt_opts([{sslversion, Ver}|Opts], Acc) when Ver == tlsv1;
                                        Ver == 'tlsv1.1';
                                        Ver == 'tlsv1.2';
                                        Ver == 'tlsv1.3_nocompat';
                                        Ver == 'tlsv1.3' ->
-    mqtt_opts(Opts, [{ssl, true} | Acc]);
+    mqtt_opts(Opts, [{sslversion, Ver} | lists:keystore(ssl, 1, Acc, {ssl, true})]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([{qoe, Bool}|Opts], Acc) ->
@@ -971,12 +979,12 @@ ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([{cacertfile, CaCertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{cacertfile, CaCertFile}|Acc]);
-ssl_opts([{ssl, 'tlsv1.3_nocompat'} | Opts], Acc) ->
+ssl_opts([{sslversion, 'tlsv1.3_nocompat'} | Opts], Acc) ->
     ssl_opts(Opts, [{versions, ['tlsv1.3']}, {middlebox_comp_mode, false} | Acc]);
+ssl_opts([{sslversion, Vsn} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, [Vsn]} | Acc]);
 ssl_opts([{ssl, IsSSL} | Opts], Acc) when is_boolean(IsSSL) ->
     ssl_opts(Opts, Acc);
-ssl_opts([{ssl, Vsn} | Opts], Acc) ->
-    ssl_opts(Opts, [{versions, [Vsn]} | Acc]);
 ssl_opts([{nst_dets_file, DetsFile}| Opts], Acc) ->
     ok = prepare_nst(DetsFile),
     io:format("enable session_tickets~n"),
