@@ -1,8 +1,7 @@
 # emqtt-bench changelog
 
 ## 0.4.31
-* (Breaking Change) cmdline arg `-S --ssl` now requires one more argument, see below
-* Support `-S tlsv1.3` to enforce TLS version. 
+* New `--ssl-version` to enforce TLS version and implies ssl is enabled.
 * QoE logging now logs TCP handshake latency during TLS handshake ( emqtt 1.14.0).
 * QoE logging now logs each publish msg' end to end latency if `--payload-hdrs=ts` is set by both subscriber and publisher. 
 * Dump TLS secrets per connecion to SSLKEYLOGFILE specifed by envvar SSLKEYLOGFILE for TLS traffic decryption.  (TLS and QUIC)
