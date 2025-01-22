@@ -386,6 +386,15 @@ init() ->
                       , protected
                       , {read_concurrency, true}]),
     true = ets:insert(?cnt_map, Counters),
+
+    case os:getenv("SSLKEYLOGFILE") of
+        false ->
+            ok;
+        V when is_list(V) ->
+            io:format("Dump TLS secrets to ~s~n", [V]),
+            persistent_term:put(sslkeylogfile, V)
+    end,
+
     lists:foreach(fun({C, _Idx}) ->
                         put({stats, C}, InitS)
                   end, Counters).
@@ -522,6 +531,7 @@ connect(Parent, N, PubSub, Opts) ->
     Prometheus = lists:member(prometheus, Opts),
     GoSignalPid = proplists:get_value(publish_signal_pid, Opts),
     SendGoSignal = proplists:get_value(send_go_signal, Opts),
+    IsQuic = is_quic(Opts),
     MRef = case is_pid(GoSignalPid) of
                true -> monitor(process, GoSignalPid);
                _ -> undefined
@@ -561,7 +571,7 @@ connect(Parent, N, PubSub, Opts) ->
     case ConnRet of
         {ok, _Props} ->
             inc_counter(Prometheus, connect_succ),
-            maybe_record_keylogfile(Client),
+            (not IsQuic) andalso maybe_record_keylogfile(Client),
             Res =
                 case PubSub of
                     conn ->
@@ -976,11 +986,10 @@ ssl_opts([_|Opts], Acc) ->
 
 init_ssl_opts() ->
     Default = [{verify, verify_none}],
-    case os:getenv("SSLKEYLOGFILE") of
+    case persistent_term:get(sslkeylogfile, false) of
         false ->
             Default;
         V when is_list(V)->
-            persistent_term:put(sslkeylogfile, V),
             [ {keep_secrets, true} | Default]
     end.
 
@@ -1190,18 +1199,19 @@ shard_addr(N, AddrList) ->
 -spec quic_opts(proplists:proplist(), binary()) -> {proplists:proplist(), proplists:proplist()}.
 quic_opts(Opts, ClientId) ->
    Nst = quic_opts_nst(Opts, ClientId),
+   Sslkeylogfile = quic_sslkeylogfile(),
    case proplists:get_value(quic, Opts, undefined) of
       undefined ->
          [];
       false ->
          [];
       true ->
-         Nst;
+         {Nst ++ Sslkeylogfile, []};
       [] ->
-         Nst;
+         {Nst ++ Sslkeylogfile, []};
       [{ConnOpts, StrmOpts}]
-        when is_list(ConnOpts) andalso is_list(StrmOpts)->
-         {Nst++ConnOpts, StrmOpts}
+        when is_list(ConnOpts) andalso is_list(StrmOpts) ->
+         {Sslkeylogfile ++ Nst++ ConnOpts, StrmOpts}
    end.
 
 quic_opts_nst(Opts, ClientId) when is_binary(ClientId) ->
@@ -1215,6 +1225,14 @@ quic_opts_nst(Opts, ClientId) when is_binary(ClientId) ->
                []
          end
    end.
+
+quic_sslkeylogfile() ->
+    case persistent_term:get(sslkeylogfile, false) of
+        false ->
+            [];
+        V ->
+            [{sslkeylogfile, V}]
+    end.
 
 -spec p95([integer()]) -> integer().
 p95(List)->
