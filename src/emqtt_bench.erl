@@ -17,8 +17,6 @@
 -module(emqtt_bench).
 
 -include_lib("emqtt/include/emqtt.hrl").
--define(shared_padding_tab, emqtt_bench_shared_payload).
--define(QoELog, qoe_dlog).
 
 -export([ main/1
         , main/2
@@ -77,7 +75,9 @@
           "max retries of reconnects. 0: disabled"},
          %% == Transport: TCP, TLS, QUIC, WS ==
          {ssl, $S, "ssl", {boolean, false},
-          "ssl socket for connecting to server"},
+           "ssl socket for connecting to server"},
+         {sslversion, undefined, "ssl-version", atom,
+          "enforce tls version and implies ssl is enabled, 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 'tlsv1.3_nocompat'"},
          {cacertfile, undefined, "cacertfile", string,
           "CA certificate for server verification"},
          {certfile, undefined, "certfile", string,
@@ -168,7 +168,7 @@
          {min_random_wait, undefined,"min-random-wait", {integer, 0},
           "minimum randomized period in ms that each publisher will wait before "
           "starting to publish (uniform distribution)"},
-         {retry_interval, 0, "retry-interval", {integer, 0},
+         {retry_interval, undefined, "retry-interval", {integer, 0},
           "Publisher's resend interval (in seconds) if the expected "
           "acknowledgement for a inflight packet is not "
           "received within this interval. Default value 0 means no resend."
@@ -183,7 +183,7 @@
           "Handle the payload header from received message. "
           "Publish side must have the same option enabled in the same order. "
           "cnt64: Check the counter is strictly increasing. "
-          "ts: publish latency counting."
+          "ts: publish latency counting, could be used for QoE tracking as well"
          },
          {qos, $q, "qos", {integer, 0},
           "subscribe qos"}
@@ -191,10 +191,25 @@
 
 -define(CONN_OPTS, ?COMMON_OPTS).
 
+-define(shared_padding_tab, emqtt_bench_shared_payload).
+-define(QoELog, qoe_dlog).
 -define(cnt_map, cnt_map).
 -define(hdr_cnt64, "cnt64").
 -define(hdr_ts, "ts").
 -define(GO_SIGNAL, go).
+
+-define(qoe_store, qoe_store).
+%% client_id used in QoE tracking, not readable if QoE tracking is off
+-define(qoe_client_id, qoe_client_id).
+
+-define(invalid_elapsed, -1).
+-record(qoe_rec_v2, { key :: {ClientId::binary(), Ts:: timer:time()},
+                      tcp_lat = ?invalid_elapsed,
+                      handshake_lat = ?invalid_elapsed,
+                      connect_lat = ?invalid_elapsed,
+                      subscribe_lat = ?invalid_elapsed,
+                      publish_lat = ?invalid_elapsed
+                    }).
 
 main(["sub"|Argv]) ->
     {ok, {Opts, _Args}} = getopt:parse(?SUB_OPTS, Argv),
@@ -373,6 +388,15 @@ init() ->
                       , protected
                       , {read_concurrency, true}]),
     true = ets:insert(?cnt_map, Counters),
+
+    case os:getenv("SSLKEYLOGFILE") of
+        false ->
+            ok;
+        V when is_list(V) ->
+            io:format("Dump TLS secrets to ~s~n", [V]),
+            persistent_term:put(sslkeylogfile, V)
+    end,
+
     lists:foreach(fun({C, _Idx}) ->
                         put({stats, C}, InitS)
                   end, Counters).
@@ -380,10 +404,11 @@ init() ->
 main_loop(Uptime, Count) ->
     receive
         publish_complete ->
+            disk_log:close(?QoELog),
             return_print("publish complete~n", []);
         stats ->
             print_stats(Uptime),
-            maybe_sum_qoe(Count),
+            maybe_sum_qoe(),
             maybe_dump_nst_dets(Count),
             garbage_collect(),
             main_loop(Uptime, Count);
@@ -396,44 +421,6 @@ maybe_dump_nst_dets(Count)->
     Count == ets:info(quic_clients_nsts, size)
       andalso undefined =/= dets:info(dets_quic_nsts)
       andalso ets:to_dets(quic_clients_nsts, dets_quic_nsts).
-
-maybe_sum_qoe(Count) ->
-   %% latency statistic for
-   %% - handshake
-   %% - conn
-   %% - sub
-   case get(is_qoe_dlog) of
-      true ->
-         Data = ets:tab2list(qoe_store),
-         maybe_dlog_qoe(Data),
-         lists:foreach(fun({ClientId, _}) ->
-                             ets:delete(qoe_store, ClientId)
-                       end, Data);
-      false ->
-         case Count == ets:info(qoe_store, size) of
-            true ->
-               do_print_qoe(Data = ets:tab2list(qoe_store)),
-               %% clear to print once
-               lists:foreach(fun({ClientId, _}) ->
-                                   ets:delete(qoe_store, ClientId)
-                             end, Data);
-            false ->
-               skip
-         end
-   end.
-
-do_print_qoe([]) ->
-   skip;
-do_print_qoe(Data) ->
-   {H, C, S} = lists:foldl(fun({_Client, {_, H1, C1, S1}}, {H, C, S}) ->
-                                 {[H1 | H], [C1 | C], [S1 | S]}
-                           end, {[], [], []}, Data),
-   lists:foreach(
-     fun({_Name, []})-> skip;
-        ({Name, X}) ->
-           io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
-                     [Name, lists:sum(X)/length(X), p95(X), lists:max(X)])
-     end, [{handshake, H}, {connect, C}, {subscribe, S}]).
 
 print_stats(Uptime) ->
     [print_stats(Uptime, Cnt) ||
@@ -546,6 +533,7 @@ connect(Parent, N, PubSub, Opts) ->
     Prometheus = lists:member(prometheus, Opts),
     GoSignalPid = proplists:get_value(publish_signal_pid, Opts),
     SendGoSignal = proplists:get_value(send_go_signal, Opts),
+    IsQuic = is_quic(Opts),
     MRef = case is_pid(GoSignalPid) of
                true -> monitor(process, GoSignalPid);
                _ -> undefined
@@ -585,14 +573,15 @@ connect(Parent, N, PubSub, Opts) ->
     case ConnRet of
         {ok, _Props} ->
             inc_counter(Prometheus, connect_succ),
+            (not IsQuic) andalso maybe_record_keylogfile(Client),
             Res =
                 case PubSub of
                     conn ->
-                      ok = maybe_update_client_qoe(Client, Opts),
+                      is_qoe() andalso update_client_qoe(Client, Opts),
                       ok;
                     sub -> subscribe(Client, N, AllOpts);
                     pub ->
-                      ok = maybe_update_client_qoe(Client, Opts),
+                      is_qoe() andalso update_client_qoe(Client, Opts),
                       case MRef of
                          undefined when TopicPayloadRend == undefined ->
                             erlang:send_after(RandomPubWaitMS, self(), publish);
@@ -811,7 +800,7 @@ subscribe(Client, N, Opts) ->
     Res = emqtt:subscribe(Client, [{Topic, Qos} || Topic <- topics_opt(Opts)]),
     case Res of
        {ok, _, _} ->
-          maybe_update_client_qoe(Client, Opts),
+          is_qoe() andalso update_client_qoe(Client, Opts),
           ok;
         {error, Reason}->
             io:format("client(~w): subscribe error - ~p~n", [N, Reason])
@@ -931,8 +920,20 @@ mqtt_opts([{clean, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{clean_start, Bool}|Acc]);
 mqtt_opts([ssl|Opts], Acc) ->
     mqtt_opts(Opts, [{ssl, true}|Acc]);
-mqtt_opts([{ssl, Bool}|Opts], Acc) ->
-    mqtt_opts(Opts, [{ssl, Bool}|Acc]);
+mqtt_opts([{ssl, Bool}|Opts], Acc) when is_boolean(Bool) ->
+    case lists:keymember(ssl, 1, Acc) of
+        false ->
+            mqtt_opts(Opts, [{ssl, Bool} | Acc]);
+        _  ->
+            mqtt_opts(Opts, Acc)
+    end;
+
+mqtt_opts([{sslversion, Ver}|Opts], Acc) when Ver == tlsv1;
+                                       Ver == 'tlsv1.1';
+                                       Ver == 'tlsv1.2';
+                                       Ver == 'tlsv1.3_nocompat';
+                                       Ver == 'tlsv1.3' ->
+    mqtt_opts(Opts, [{sslversion, Ver} | lists:keystore(ssl, 1, Acc, {ssl, true})]);
 mqtt_opts([{lowmem, Bool}|Opts], Acc) ->
     mqtt_opts(Opts, [{low_mem, Bool} | Acc]);
 mqtt_opts([{qoe, Bool}|Opts], Acc) ->
@@ -967,7 +968,7 @@ tcp_opts([_|Opts], Acc) ->
     tcp_opts(Opts, Acc).
 
 ssl_opts(Opts) ->
-    ssl_opts(Opts, [{verify, verify_none}]).
+    ssl_opts(Opts, init_ssl_opts()).
 ssl_opts([], Acc) ->
     [{ciphers, all_ssl_ciphers()} | Acc];
 ssl_opts([{host, Host} | Opts], Acc) ->
@@ -978,8 +979,27 @@ ssl_opts([{certfile, CertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{certfile, CertFile}|Acc]);
 ssl_opts([{cacertfile, CaCertFile} | Opts], Acc) ->
     ssl_opts(Opts, [{cacertfile, CaCertFile}|Acc]);
+ssl_opts([{sslversion, 'tlsv1.3_nocompat'} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, ['tlsv1.3']}, {middlebox_comp_mode, false} | Acc]);
+ssl_opts([{sslversion, Vsn} | Opts], Acc) ->
+    ssl_opts(Opts, [{versions, [Vsn]} | Acc]);
+ssl_opts([{ssl, IsSSL} | Opts], Acc) when is_boolean(IsSSL) ->
+    ssl_opts(Opts, Acc);
+ssl_opts([{nst_dets_file, DetsFile}| Opts], Acc) ->
+    ok = prepare_nst(DetsFile),
+    io:format("enable session_tickets~n"),
+    ssl_opts(Opts, [{session_tickets, manual}|Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
+
+init_ssl_opts() ->
+    Default = [{verify, verify_none}],
+    case persistent_term:get(sslkeylogfile, false) of
+        false ->
+            Default;
+        V when is_list(V)->
+            [ {keep_secrets, true} | Default]
+    end.
 
 all_ssl_ciphers() ->
     Vers = ['tlsv1', 'tlsv1.1', 'tlsv1.2', 'tlsv1.3'],
@@ -1187,18 +1207,19 @@ shard_addr(N, AddrList) ->
 -spec quic_opts(proplists:proplist(), binary()) -> {proplists:proplist(), proplists:proplist()}.
 quic_opts(Opts, ClientId) ->
    Nst = quic_opts_nst(Opts, ClientId),
+   Sslkeylogfile = quic_sslkeylogfile(),
    case proplists:get_value(quic, Opts, undefined) of
       undefined ->
          [];
       false ->
          [];
       true ->
-         Nst;
+         {Nst ++ Sslkeylogfile, []};
       [] ->
-         Nst;
+         {Nst ++ Sslkeylogfile, []};
       [{ConnOpts, StrmOpts}]
-        when is_list(ConnOpts) andalso is_list(StrmOpts)->
-         {Nst++ConnOpts, StrmOpts}
+        when is_list(ConnOpts) andalso is_list(StrmOpts) ->
+         {Sslkeylogfile ++ Nst++ ConnOpts, StrmOpts}
    end.
 
 quic_opts_nst(Opts, ClientId) when is_binary(ClientId) ->
@@ -1213,6 +1234,14 @@ quic_opts_nst(Opts, ClientId) when is_binary(ClientId) ->
          end
    end.
 
+quic_sslkeylogfile() ->
+    case persistent_term:get(sslkeylogfile, false) of
+        false ->
+            [];
+        V ->
+            [{sslkeylogfile, V}]
+    end.
+
 -spec p95([integer()]) -> integer().
 p95(List)->
    percentile(List, 0.95).
@@ -1223,19 +1252,19 @@ percentile(Input, P) ->
 
 -spec prepare_quic_nst(proplists:proplist()) -> ok | skip.
 prepare_quic_nst(Opts)->
+    prepare_nst(proplists:get_value(nst_dets_file, Opts, undefined)).
+
+-spec prepare_nst(undefined | file:filename()) -> ok | skip.
+prepare_nst(undefined) ->
+    skip;
+prepare_nst(Filename) ->
    %% Create ets table for 0-RTT session tickets
    ets:new(quic_clients_nsts, [named_table, public, ordered_set,
                                {write_concurrency, true},
                                {read_concurrency,true}]),
-   %% Load session tickets from dets file if specified.
-   case proplists:get_value(nst_dets_file, Opts, undefined) of
-      undefined ->
-         skip;
-      Filename ->
-         {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, Filename}]),
-         true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
-         ok
-   end.
+    {ok, _DRef} = dets:open_file(dets_quic_nsts, [{file, Filename}]),
+    true = ets:from_dets(quic_clients_nsts, dets_quic_nsts),
+    ok.
 
 -spec counters() -> {atom(), integer()}.
 counters() ->
@@ -1291,6 +1320,10 @@ maybe_init_prometheus(true) ->
       fun(Cnt) ->
               prometheus_counter:declare([{name, Cnt}, {help, atom_to_list(Cnt)}])
       end, Counters),
+    prometheus_histogram:declare([{name, mqtt_client_tcp_handshake_duration},
+                                  {labels, []},
+                                  {buckets, [1, 3, 5, 10, 20]},
+                                  {help, "TCP Handshake duration of MQTT client"}]),
     prometheus_histogram:declare([{name, mqtt_client_handshake_duration},
                                   {labels, []},
                                   {buckets, [1, 3, 5, 10, 20]},
@@ -1315,8 +1348,10 @@ maybe_check_payload_hdrs(_, _Bin, []) ->
    ok;
 maybe_check_payload_hdrs(Prometheus, << TS:64/integer, BinL/binary >>, [?hdr_ts | RL]) ->
    E2ELatency = os:system_time(millisecond) - TS,
+   %% publish_latency counter is global, only update it when > 0
    E2ELatency > 0 andalso inc_counter(Prometheus, publish_latency, E2ELatency),
-   E2ELatency > 0 andalso histogram_observe(Prometheus, e2e_latency, E2ELatency),
+   histogram_observe(Prometheus, e2e_latency, E2ELatency),
+   is_qoe_dlog() andalso pub_qoe(E2ELatency),
    maybe_check_payload_hdrs(Prometheus, BinL, RL);
 maybe_check_payload_hdrs(Prometheus, << Cnt:64/integer, BinL/binary >>, [?hdr_cnt64 | RL]) ->
    case put(payload_hdr_cnt64, Cnt) of
@@ -1529,18 +1564,91 @@ prepare_quicer(Opts) ->
          ok
    end.
 
-maybe_update_client_qoe(Client, Opts) ->
-   ClientInfo = emqtt:info(Client),
-   case proplists:get_value(qoe, ClientInfo, false) of
-      false ->
-         ok;
-      QoEMap when is_map(QoEMap) ->
-         Prometheus = lists:member(prometheus, Opts),
-         ClientId = proplists:get_value(clientid, ClientInfo),
-         qoe_store_insert(Prometheus, ClientId, QoEMap)
-   end.
+%% @doc write SSL keylog file, for Wireshark TLS decryption.
+%%      SSL only, doesn't work for other transport
+%% @end
+-spec maybe_record_keylogfile(emqtt:client()) -> ok.
+maybe_record_keylogfile(Client) when is_pid(Client) ->
+     do_write_keylogfile(persistent_term:get(sslkeylogfile, false), Client).
+do_write_keylogfile(false, _Client) ->
+    ok;
+do_write_keylogfile(Keylogpath, Client) ->
+    {_, _, S} = proplists:get_value(socket, emqtt:info(Client)),
+    case ssl:connection_information(S, [keylog]) of
+        {ok, [{keylog, Keylog}]} ->
+            Lines = lists:map(fun(Line) -> [Line, "\n"] end, Keylog),
+            ok = file:write_file(Keylogpath, Lines, [append]);
+        _ ->
+            io:format("Get keylog failed from ssl:connection_information ~n"),
+            ok
+    end.
 
--define(invalid_elapsed, -1).
+%% =========================%%
+%% === START QoE helpers == %%
+%% =========================%%
+get_qoe_type() ->
+    persistent_term:get(is_qoe).
+
+is_qoe_dlog() ->
+    log == get_qoe_type().
+
+is_qoe() ->
+    false =/= get_qoe_type().
+
+%% Enable QoE track in mem.
+enable_qoe() ->
+    persistent_term:put(is_qoe, true).
+
+%% Enable QoE track in mem AND log records to disklog file
+enable_qoe_dlog() ->
+    persistent_term:put(is_qoe, log).
+
+%% QoE track disabled globally.
+disable_qoe() ->
+    persistent_term:put(is_qoe, false).
+
+%% @doc init QoE Globally
+init_qoe(Opts) ->
+   case proplists:get_value(qoe, Opts) of
+      false ->
+         disable_qoe(),
+         skip;
+      dump ->
+         %% Dump QoE disk logfile to CSV file
+         case proplists:get_value(qoelog, Opts) of
+            "" ->
+               error("qoelog not specified");
+            File ->
+               ok = open_qoe_disklog(File),
+               qoe_disklog_to_csv(File),
+               disk_log:close(?QoELog),
+               erlang:halt()
+          end;
+      true ->
+         ets:new(?qoe_store, [named_table, public, set, {write_concurrency, true}, {keypos, 2}]),
+         %% QoE disk Log file
+         case proplists:get_value(qoelog, Opts) of
+            "" ->
+               enable_qoe(),
+               skip;
+            File ->
+               enable_qoe_dlog(),
+               persistent_term:put(is_qoe, log),
+               open_qoe_disklog(File)
+         end
+      end.
+
+
+%% @doc set ?qoe_client_id for per pub message QoE tracking.
+update_client_qoe(Client, Opts) ->
+    ClientInfo = emqtt:info(Client),
+    QoEMap = proplists:get_value(qoe, ClientInfo, false),
+    Prometheus = lists:member(prometheus, Opts),
+    ClientId = proplists:get_value(clientid, ClientInfo),
+    put(?qoe_client_id, ClientId),
+    qoe_store_insert(Prometheus, ClientId, QoEMap).
+
+%% @doc QoE tracking in mem per client
 qoe_store_insert(Prometheus,
                  ClientId,
                  #{ initialized := StartTs
@@ -1556,39 +1664,29 @@ qoe_store_insert(Prometheus,
                    SubTs ->
                       SubTs - StartTs
                 end,
+
+   ElapsedTCPHS = case maps:get(tcp_connected_at, QoE, undefined) of
+                   undefined ->
+                      %% invalid
+                      ?invalid_elapsed;
+                   TCPTs ->
+                      TCPTs - StartTs
+                end,
+   histogram_observe(Prometheus, mqtt_client_tcp_handshake_duration, ElapsedTCPHS),
    histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
    histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
    histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
-   Term = {ClientId, {StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub}},
-   true = ets:insert(qoe_store, Term),
+
+   Offset = erlang:time_offset(millisecond),
+   Term = #qoe_rec_v2{key = {ClientId, Offset + StartTs},
+                      tcp_lat = ElapsedTCPHS,
+                      handshake_lat = ElapsedHandshake,
+                      connect_lat = ElapsedConn,
+                      subscribe_lat = ElapsedSub
+                      },
+   true = ets:insert(?qoe_store, Term),
    ok.
 
-init_qoe(Opts) ->
-   put(is_qoe_dlog, false),
-   case proplists:get_value(qoe, Opts) of
-      false ->
-         skip;
-      dump ->
-         case proplists:get_value(qoelog, Opts) of
-            "" ->
-               error("qoelog not specified");
-            File ->
-               ok = open_qoe_disklog(File),
-               qoe_disklog_to_csv(File),
-               disk_log:close(?QoELog),
-               erlang:halt()
-          end;
-      true ->
-         ets:new(qoe_store, [named_table, public, set]),
-         %% QoE disk Log file
-         case proplists:get_value(qoelog, Opts) of
-            "" ->
-               skip;
-            File ->
-               put(is_qoe_dlog, true),
-               open_qoe_disklog(File)
-         end
-      end.
 
 open_qoe_disklog(File) ->
    case disk_log:open([{name, ?QoELog}, {file, File}, {repair, true}, {type, halt},
@@ -1605,17 +1703,31 @@ qoe_disklog_to_csv(File) ->
    TargetFile = File++".csv",
    {ok, CsvH} = file:open(TargetFile, [write]),
    io:format("No execution, just dumping QoE dlog to csv file: ~p~n", [TargetFile]),
-   file:write(CsvH, "ClientId,TS,Handshake,Connect,Subscribe\n"),
+   file:write(CsvH, "ClientId,TS,TCP,Handshake,Connect,Subscribe,Publish\n"),
    Writer = fun(Terms) ->
                   Lines = lists:map(
-                            fun([ClientId, TS, Handshake, Connect, Subscribe]) ->
-                                  io_lib:format("~s,~p,~p,~p,~p~n",
-                                                [ClientId, TS, Handshake, Connect, Subscribe])
+                            fun(Term) ->
+                                    io_lib:format("~s,~p,~p,~p,~p,~p,~p~n",
+                                                to_fmt_args(Term))
                             end, Terms),
                   file:write(CsvH, Lines)
             end,
    do_qoe_disklog_to_csv(?QoELog, start, Writer),
    file:close(CsvH).
+
+to_fmt_args(#qoe_rec_v2{
+                       key = {ClientId, StartTs},
+                       tcp_lat = ElapsedTCPHS,
+                       handshake_lat = ElapsedHandshake,
+                       connect_lat = ElapsedConn,
+                       subscribe_lat = ElapsedSub,
+                       publish_lat = ElapsedPub
+                      }) ->
+    [ClientId, StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, ElapsedPub];
+to_fmt_args([ClientId, StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub]) ->
+    _ElapsedTCPHS = ?invalid_elapsed,
+    _ElapsedPub = ?invalid_elapsed,
+    [ClientId, StartTs, _ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, _ElapsedPub].
 
 do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
    case disk_log:chunk(Log, Cont0) of
@@ -1629,9 +1741,63 @@ do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
          ok
    end.
 
-maybe_dlog_qoe(Data) ->
-   Offset = erlang:time_offset(millisecond),
-   DLog = [ [ClientId, Offset + StartTs,
-             ElapsedHandshake, ElapsedConn, ElapsedSub]
-            || {ClientId, {StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub}} <- Data],
-   ok = disk_log:log_terms(?QoELog, DLog).
+%% @doc main process call this periodically to flush to disklog or print to console.
+maybe_sum_qoe() ->
+    %% latency statistic for
+    %% - handshake
+    %% - conn
+    %% - sub
+    case get_qoe_type() of
+        false ->
+            ok;
+        log ->
+            with_qoe_data(fun dlog_qoe/1);
+        true ->
+            with_qoe_data(fun do_print_qoe/1)
+
+    end.
+
+with_qoe_data(Fun) ->
+    Data = ets:tab2list(?qoe_store),
+    Fun(Data),
+    lists:foreach(fun(#qoe_rec_v2{key = Key}) ->
+                          ets:delete(?qoe_store, Key)
+                  end, Data).
+
+do_print_qoe([]) ->
+    skip;
+do_print_qoe(Data) ->
+    {T, H, C, S, P} = lists:foldl(fun(#qoe_rec_v2{tcp_lat = T1,
+                                                  handshake_lat = H1,
+                                                  connect_lat = C1,
+                                                  subscribe_lat = S1,
+                                                  publish_lat = P1
+                                                 },
+                                      {T, H, C, S, P}) ->
+                                          {[T1 | T] , [H1 | H], [C1 | C], [S1 | S], [P1 | P]}
+                                  end, {[], [], [], [], []}, Data),
+    lists:foreach(
+      fun({_Name, []})-> skip;
+         ({Name, X}) ->
+              case lists:max(X) of
+                  ?invalid_elapsed -> skip;
+                  Max ->
+                      io:format("~p, avg: ~pms, P95: ~pms, Max: ~pms ~n",
+                                [Name, lists:sum(X)/length(X), p95(X), Max])
+              end
+      end, [{tcp, T}, {handshake, H}, {connect, C}, {subscribe, S}, {publish, P}]).
+
+
+%% QoE tracking per pub message
+pub_qoe(Elapsed) ->
+    ClientId = get(?qoe_client_id),
+    true = (ClientId =/= undefined),
+    Term = #qoe_rec_v2{key = {ClientId, os:system_time(millisecond)},
+                       publish_lat = Elapsed},
+    true = ets:insert(?qoe_store, Term).
+
+dlog_qoe(Data) ->
+    ok = disk_log:log_terms(?QoELog, Data).
+
+%% == END QoE helpers ==
+

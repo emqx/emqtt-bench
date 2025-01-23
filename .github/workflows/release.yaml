@@ -55,12 +55,11 @@ jobs:
             FROM=ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
 
   linux:
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         otp:
-          - 26.2.5-1
+          - 26.2.5.2-3
         elixir:
           - 1.15.7
         quic_support:
@@ -73,10 +72,15 @@ jobs:
           - debian11
           - el9
           - el8
+          - el7
           - amzn2
           - amzn2023
+        arch:
+          - ""
+          - "-arm"
+    runs-on: ubuntu-22.04${{ matrix.arch }}
     env:
-      IMAGE: ghcr.io/emqx/emqx-builder/5.3-7:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
+      IMAGE: ghcr.io/emqx/emqx-builder/5.4-4:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -114,7 +118,7 @@ jobs:
           popd
       - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}"
+          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}${{ matrix.arch }}"
           path: ./*.tar.gz
 
   mac:
