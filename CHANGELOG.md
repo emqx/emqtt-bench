@@ -1,6 +1,11 @@
 # emqtt-bench changelog
 
+## 0.4.32
+
+* QoE: Fix csv dump, represent `invalid_elapsed` as `""` instead of `-1` 
+
 ## 0.4.31
+
 * New `--ssl-version` to enforce TLS version and implies ssl is enabled.
 * QoE logging now logs TCP handshake latency during TLS handshake ( emqtt 1.14.0).
 * QoE logging now logs each publish msg' end to end latency if `--payload-hdrs=ts` is set by both subscriber and publisher. 
