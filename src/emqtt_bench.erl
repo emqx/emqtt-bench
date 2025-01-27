@@ -202,7 +202,7 @@
 %% client_id used in QoE tracking, not readable if QoE tracking is off
 -define(qoe_client_id, qoe_client_id).
 
--define(invalid_elapsed, -1).
+-define(invalid_elapsed, '_invalid_elapsed_').
 -record(qoe_rec_v2, { key :: {ClientId::binary(), Ts:: timer:time()},
                       tcp_lat = ?invalid_elapsed,
                       handshake_lat = ?invalid_elapsed,
@@ -1707,7 +1707,7 @@ qoe_disklog_to_csv(File) ->
    Writer = fun(Terms) ->
                   Lines = lists:map(
                             fun(Term) ->
-                                    io_lib:format("~s,~p,~p,~p,~p,~p,~p~n",
+                                    io_lib:format("~s,~s,~s,~s,~s,~s,~s~n",
                                                 to_fmt_args(Term))
                             end, Terms),
                   file:write(CsvH, Lines)
@@ -1723,11 +1723,12 @@ to_fmt_args(#qoe_rec_v2{
                        subscribe_lat = ElapsedSub,
                        publish_lat = ElapsedPub
                       }) ->
-    [ClientId, StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, ElapsedPub];
+    to_strlist([ClientId, StartTs, ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, ElapsedPub]);
 to_fmt_args([ClientId, StartTs, ElapsedHandshake, ElapsedConn, ElapsedSub]) ->
+    %% For backword compatibility
     _ElapsedTCPHS = ?invalid_elapsed,
     _ElapsedPub = ?invalid_elapsed,
-    [ClientId, StartTs, _ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, _ElapsedPub].
+    to_strlist([ClientId, StartTs, _ElapsedTCPHS, ElapsedHandshake, ElapsedConn, ElapsedSub, _ElapsedPub]).
 
 do_qoe_disklog_to_csv(Log, Cont0, Writer) ->
    case disk_log:chunk(Log, Cont0) of
@@ -1798,6 +1799,15 @@ pub_qoe(Elapsed) ->
 
 dlog_qoe(Data) ->
     ok = disk_log:log_terms(?QoELog, Data).
+
+%% @doc convert all invalid_elapsed to empty string,
+%%      ensure all elems are string
+to_strlist(List) ->
+    lists:map(fun(?invalid_elapsed) -> "";
+                 (X) when is_integer(X) -> integer_to_list(X);
+                 (X) when is_binary(X) ->
+                      X
+              end, List).
 
 %% == END QoE helpers ==
 
