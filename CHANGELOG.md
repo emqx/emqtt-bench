@@ -2,7 +2,8 @@
 
 ## 0.4.32
 
-* QoE: Fix csv dump, represent `invalid_elapsed` as `""` instead of `-1` 
+* QoE: Fix csv dump, represent `invalid_elapsed` as `""` instead of `-1`
+* TLS: support `--ciphers` and `--signature-algs`
 
 ## 0.4.31
 
