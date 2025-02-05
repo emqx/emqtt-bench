@@ -84,6 +84,10 @@
           "client certificate for authentication, if required by server"},
          {keyfile, undefined, "keyfile", string,
           "client private key for authentication, if required by server"},
+         {ciphers, undefined, "ciphers", string,
+          "Cipher suite for ssl/tls connection, comma separated list. e.g. TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256"},
+         {signature_algs, undefined, "signature-algs", string,
+          "Signature algorithm for tlsv1.3 connection only, comma separated list. e.g. ecdsa_secp384r1_sha384,ecdsa_secp256r1_sha256"},
          {quic, undefined, "quic", {string, "false"},
           "QUIC transport"},
          {ws, undefined, "ws", {boolean, false},
@@ -970,7 +974,12 @@ tcp_opts([_|Opts], Acc) ->
 ssl_opts(Opts) ->
     ssl_opts(Opts, init_ssl_opts()).
 ssl_opts([], Acc) ->
-    [{ciphers, all_ssl_ciphers()} | Acc];
+    case lists:keymember(ciphers, 1, Acc) of
+        false ->
+            [{ciphers, all_ssl_ciphers()} | Acc];
+        _ ->
+            Acc
+    end;
 ssl_opts([{host, Host} | Opts], Acc) ->
     ssl_opts(Opts, [{server_name_indication, Host} | Acc]);
 ssl_opts([{keyfile, KeyFile} | Opts], Acc) ->
@@ -989,6 +998,12 @@ ssl_opts([{nst_dets_file, DetsFile}| Opts], Acc) ->
     ok = prepare_nst(DetsFile),
     io:format("enable session_tickets~n"),
     ssl_opts(Opts, [{session_tickets, manual}|Acc]);
+ssl_opts([{ciphers, Ciphers}| Opts], Acc) ->
+    CipherList = [ssl:str_to_suite(X) || X <- string:tokens(Ciphers, ",")],
+    ssl_opts(Opts, [{ciphers, CipherList} | Acc]);
+ssl_opts([{signature_algs, Algs}| Opts], Acc) ->
+    AlgList = [list_to_existing_atom(X) || X <- string:tokens(Algs, ",")],
+    ssl_opts(Opts, [{signature_algs, AlgList} | Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
 
