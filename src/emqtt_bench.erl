@@ -1353,7 +1353,7 @@ maybe_init_prometheus(true) ->
                                   {help, "Subscribe duration of MQTT client (ms)"}]),
     prometheus_histogram:declare([{name, e2e_latency},
                                   {buckets, [1, 5, 10, 25, 50, 100, 500, 1000, 2000, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 30000]},
-                                  {help, "End-to-end latency"}]).
+                                  {help, "End-to-end latency (ms)"}]).
 
 %% @doc Check received payload headers
 -spec maybe_check_payload_hdrs(Prometheus :: boolean(), Payload :: binary(), Hdrs :: [string()]) -> ok.
