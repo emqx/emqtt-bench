@@ -1670,38 +1670,33 @@ qoe_store_insert(Prometheus,
                   , handshaked := HSTs
                   , connected := ConnTs
                   } = QoE) ->
-   ElapsedHandshake = HSTs - StartTs,
-   ElapsedConn = ConnTs - StartTs,
-   ElapsedSub = case maps:get(subscribed, QoE, undefined) of
-                   undefined ->
-                      %% invalid
-                      ?invalid_elapsed;
-                   SubTs ->
-                      SubTs - StartTs
-                end,
 
-   ElapsedTCPHS = case maps:get(tcp_connected_at, QoE, undefined) of
-                   undefined ->
-                      %% invalid
-                      ?invalid_elapsed;
-                   TCPTs ->
-                      TCPTs - StartTs
-                end,
-   histogram_observe(Prometheus, mqtt_client_tcp_handshake_duration, ElapsedTCPHS),
-   histogram_observe(Prometheus, mqtt_client_handshake_duration, ElapsedHandshake),
-   histogram_observe(Prometheus, mqtt_client_connect_duration, ElapsedConn),
-   histogram_observe(Prometheus, mqtt_client_subscribe_duration, ElapsedSub),
+    CalcAndObserve = fun(EndTs, Metric) when is_integer(EndTs) ->
+                        Elapsed = EndTs - StartTs,
+                        histogram_observe(Prometheus, Metric, Elapsed),
+                        Elapsed;
+                       (_, _) ->
+                        ?invalid_elapsed
+                    end,
 
-   Offset = erlang:time_offset(millisecond),
-   Term = #qoe_rec_v2{key = {ClientId, Offset + StartTs},
-                      tcp_lat = ElapsedTCPHS,
-                      handshake_lat = ElapsedHandshake,
-                      connect_lat = ElapsedConn,
-                      subscribe_lat = ElapsedSub
-                      },
-   true = ets:insert(?qoe_store, Term),
-   ok.
+    TcpConnectedAtTs = maps:get(tcp_connected_at, QoE, undefined),
+    ElapsedTCPHS = CalcAndObserve(TcpConnectedAtTs, mqtt_client_tcp_handshake_duration),
+    ElapsedHandshake = CalcAndObserve(HSTs, mqtt_client_handshake_duration),
+    ElapsedConn = CalcAndObserve(ConnTs, mqtt_client_connect_duration),
+    SubscribedTs = maps:get(subscribed, QoE, undefined),
+    ElapsedSub = CalcAndObserve(SubscribedTs, mqtt_client_subscribe_duration),
 
+    Offset = erlang:time_offset(millisecond),
+    Term = #qoe_rec_v2{
+        key = {ClientId, Offset + StartTs},
+        tcp_lat = ElapsedTCPHS,
+        handshake_lat = ElapsedHandshake,
+        connect_lat = ElapsedConn,
+        subscribe_lat = ElapsedSub
+    },
+
+    true = ets:insert(?qoe_store, Term),
+    ok.
 
 open_qoe_disklog(File) ->
    case disk_log:open([{name, ?QoELog}, {file, File}, {repair, true}, {type, halt},
