@@ -1,5 +1,14 @@
 # emqtt-bench changelog
 
+## 0.4.34
+
+* new tls1.3 opt for Key exchange alg: `-keyex-algs` 
+
+## 0.4.33
+
+* fix: prometheus metrics observation with qoe enabled 
+* Add more histogram buckets 
+
 ## 0.4.32
 
 * QoE: Fix csv dump, represent `invalid_elapsed` as `""` instead of `-1`

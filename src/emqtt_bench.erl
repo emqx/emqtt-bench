@@ -88,6 +88,8 @@
           "Cipher suite for ssl/tls connection, comma separated list. e.g. TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256"},
          {signature_algs, undefined, "signature-algs", string,
           "Signature algorithm for tlsv1.3 connection only, comma separated list. e.g. ecdsa_secp384r1_sha384,ecdsa_secp256r1_sha256"},
+         {keyex_algs, undefined, "keyex-algs", string,
+          "Key exchange algorithm for tlsv1.3 connection only, comma separated list. e.g. secp384r1,secp256r1"},
          {quic, undefined, "quic", {string, "false"},
           "QUIC transport"},
          {ws, undefined, "ws", {boolean, false},
@@ -1004,6 +1006,9 @@ ssl_opts([{ciphers, Ciphers}| Opts], Acc) ->
 ssl_opts([{signature_algs, Algs}| Opts], Acc) ->
     AlgList = [list_to_existing_atom(X) || X <- string:tokens(Algs, ",")],
     ssl_opts(Opts, [{signature_algs, AlgList} | Acc]);
+ssl_opts([{keyex_algs, Algs}| Opts], Acc) ->
+    AlgList = [list_to_existing_atom(X) || X <- string:tokens(Algs, ",")],
+    ssl_opts(Opts, [{supported_groups, AlgList} | Acc]);
 ssl_opts([_|Opts], Acc) ->
     ssl_opts(Opts, Acc).
 
