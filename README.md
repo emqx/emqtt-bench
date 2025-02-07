@@ -70,7 +70,6 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] 
                              multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
                              planned to avoid client ID collision [default: 0]
   --num-retry-connect        number of times to retry estabilishing a connection before giving up [default: 0]
-  -R, --connrate             connection rate(/s), default: 0, fallback to use --interval [default: 0]
   --reconnect                max retries of reconnects. 0: disabled [default: 0]
   -S, --ssl                  ssl socket for connecting to server [default: false]
   --ssl-version              enforce tls version and implies ssl is enabled, 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 
@@ -147,7 +146,6 @@ Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                              multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
                              planned to avoid client ID collision [default: 0]
   --num-retry-connect        number of times to retry estabilishing a connection before giving up [default: 0]
-  -R, --connrate             connection rate(/s), default: 0, fallback to use --interval [default: 0]
   --reconnect                max retries of reconnects. 0: disabled [default: 0]
   -S, --ssl                  ssl socket for connecting to server [default: false]
   --ssl-version              enforce tls version and implies ssl is enabled, 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 
@@ -232,7 +230,6 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                                 multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
                                 planned to avoid client ID collision [default: 0]
   --num-retry-connect           number of times to retry estabilishing a connection before giving up [default: 0]
-  -R, --connrate                connection rate(/s), default: 0, fallback to use --interval [default: 0]
   --reconnect                   max retries of reconnects. 0: disabled [default: 0]
   -S, --ssl                     ssl socket for connecting to server [default: false]
   --ssl-version                 enforce tls version and implies ssl is enabled, 'tlsv1.1' | 'tlsv1.2' | 'tlsv1.3' | 
