@@ -66,7 +66,7 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, ?PREFIX_DESC},
-         {shortids, $s, "shortids", {boolean, false}, ?SHORTIDS_DESC},
+         {shortids, undefined, "shortids", {boolean, false}, ?SHORTIDS_DESC},
          {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
