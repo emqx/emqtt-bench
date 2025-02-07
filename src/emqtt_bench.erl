@@ -66,11 +66,10 @@
          {ifaddr, undefined, "ifaddr", string,
           "local ipaddress or interface address"},
          {prefix, undefined, "prefix", string, ?PREFIX_DESC},
-         {shortids, $s, "shortids", {boolean, false}, ?SHORTIDS_DESC},
+         {shortids, undefined, "shortids", {boolean, false}, ?SHORTIDS_DESC},
          {startnumber, $n, "startnumber", {integer, 0}, ?STARTNUMBER_DESC},
          {num_retry_connect, undefined, "num-retry-connect", {integer, 0},
           "number of times to retry estabilishing a connection before giving up"},
-         {conn_rate, $R, "connrate", {integer, 0}, "connection rate(/s), default: 0, fallback to use --interval"},
          {reconnect, undefined, "reconnect", {integer, 0},
           "max retries of reconnects. 0: disabled"},
          %% == Transport: TCP, TLS, QUIC, WS ==

@@ -3,6 +3,8 @@
 ## 0.4.34
 
 * new tls1.3 opt for Key exchange alg: `-keyex-algs` 
+* short opt `-s` is now for `--size` only, it was shared by `--shortids`
+* update usages in README.md
 
 ## 0.4.33
 
