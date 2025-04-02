@@ -994,10 +994,8 @@ ssl_opts([{sslversion, Vsn} | Opts], Acc) ->
     ssl_opts(Opts, [{versions, [Vsn]} | Acc]);
 ssl_opts([{ssl, IsSSL} | Opts], Acc) when is_boolean(IsSSL) ->
     ssl_opts(Opts, Acc);
-ssl_opts([{nst_dets_file, DetsFile}| Opts], Acc) ->
-    ok = prepare_nst(DetsFile),
-    io:format("enable session_tickets~n"),
-    ssl_opts(Opts, [{session_tickets, manual}|Acc]);
+ssl_opts([{nst_dets_file, _DetsFile}| Opts], Acc) ->
+    ssl_opts(Opts, [{session_tickets, manual} | Acc]);
 ssl_opts([{ciphers, Ciphers}| Opts], Acc) ->
     CipherList = [ssl:str_to_suite(X) || X <- string:tokens(Ciphers, ",")],
     ssl_opts(Opts, [{ciphers, CipherList} | Acc]);
