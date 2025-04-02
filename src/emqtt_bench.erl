@@ -538,7 +538,6 @@ connect(Parent, N, PubSub, Opts) ->
     Prometheus = lists:member(prometheus, Opts),
     GoSignalPid = proplists:get_value(publish_signal_pid, Opts),
     SendGoSignal = proplists:get_value(send_go_signal, Opts),
-    IsQuic = is_quic(Opts),
     MRef = case is_pid(GoSignalPid) of
                true -> monitor(process, GoSignalPid);
                _ -> undefined
@@ -578,7 +577,7 @@ connect(Parent, N, PubSub, Opts) ->
     case ConnRet of
         {ok, _Props} ->
             inc_counter(Prometheus, connect_succ),
-            (not IsQuic) andalso maybe_record_keylogfile(Client),
+            _ = maybe_record_keylogfile(Client, Opts),
             Res =
                 case PubSub of
                     conn ->
@@ -1552,6 +1551,10 @@ maybe_prefix_payload(Payload, ClientOpts) ->
 is_quic(Opts) ->
    proplists:get_value(quic, Opts) =/= false.
 
+-spec is_tls(proplists:proplist()) -> boolean().
+is_tls(Opts) ->
+   proplists:get_bool(ssl, Opts).
+
 quic_opts_from_arg(Opts)->
    case proplists:get_value(quic, Opts) of
       V when is_boolean(V) ->
@@ -1584,11 +1587,13 @@ prepare_quicer(Opts) ->
    end.
 
 %% @doc write SSL keylog file, for Wireshark TLS decryption.
-%%      SSL only, doesn't work for other transport
+%%      SSL only, doesn't work for other transports
 %% @end
--spec maybe_record_keylogfile(emqtt:client()) -> ok.
-maybe_record_keylogfile(Client) when is_pid(Client) ->
-     do_write_keylogfile(persistent_term:get(sslkeylogfile, false), Client).
+-spec maybe_record_keylogfile(emqtt:client(), proplists:proplist()) -> _.
+maybe_record_keylogfile(Client, Opts) when is_pid(Client) ->
+     is_tls(Opts) andalso
+        not is_quic(Opts) andalso
+        do_write_keylogfile(persistent_term:get(sslkeylogfile, false), Client).
 do_write_keylogfile(false, _Client) ->
     ok;
 do_write_keylogfile(Keylogpath, Client) ->
