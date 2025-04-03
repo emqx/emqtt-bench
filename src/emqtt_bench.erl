@@ -568,7 +568,7 @@ connect(Parent, N, PubSub, Opts) ->
                , {publish_signal_mref, MRef}
                , {pub_start_wait, RandomPubWaitMS}
                | Opts],
-    TopicPayloadRend = render_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
+    TopicPayloadRend = render_topic_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
     AllOpts = replace_opts(AllOpts0, [{topics_payload, TopicPayloadRend}]),
     {ok, Client} = emqtt:start_link(MqttOpts1),
     ConnectFun = connect_fun(Opts),
@@ -590,7 +590,7 @@ connect(Parent, N, PubSub, Opts) ->
                          undefined when TopicPayloadRend == undefined ->
                             erlang:send_after(RandomPubWaitMS, self(), publish);
                          undefined ->
-                            maps:foreach(fun(TopicName,  #{name := TopicName, interval_ms := DelayMs}) ->
+                            maps:foreach(fun(TopicName,  #{interval_ms := DelayMs}) ->
                                                erlang:send_after(RandomPubWaitMS + DelayMs, self(), {publish, TopicName})
                                          end, TopicPayloadRend);
                          _ ->
@@ -850,7 +850,7 @@ publish(Client, Opts) ->
     end.
 
 
-publish_topic(Client, Topic, #{ name := Topic
+publish_topic(Client, Topic, #{ name := TopicRendered
                               , qos := QoS
                               , inject_ts := TsUnit
                               , payload := PayloadTemplate
@@ -869,7 +869,7 @@ publish_topic(Client, Topic, #{ name := Topic
       end,
    update_publish_start_at(Topic),
    case emqtt:publish_async(Client, via(LogicStream, #{priority => StreamPriority}),
-                          feed_var(Topic, ClientOpts), #{}, NewPayload, [{qos, QoS}],
+                          TopicRendered, #{}, NewPayload, [{qos, QoS}],
                           infinity,
                           {fun(Caller, Res) ->
                                  Caller ! {publish_async_res, Res}
@@ -1495,15 +1495,18 @@ parse_topics_payload(Opts) ->
                      end, #{} ,TopicSpecs)
    end.
 
--spec render_payload(TopicsPayload :: undefined | map(), Opts :: proplists:proplist()) -> NewTopicPayload :: undefined | map().
-render_payload(undefined, _Opts) ->
+-spec render_topic_payload(TopicsPayload :: undefined | map(), Opts :: proplists:proplist()) -> NewTopicPayload :: undefined | map().
+render_topic_payload(undefined, _Opts) ->
    undefined;
-render_payload(TopicsMap, Opts) when is_map(TopicsMap) ->
-   maps:map(fun(_K, V) -> do_render_payload(V, Opts) end, TopicsMap).
+render_topic_payload(TopicsMap, Opts) when is_map(TopicsMap) ->
+   maps:map(fun(_K, V) ->
+                    do_render_topic_payload(V, Opts)
+            end, TopicsMap).
 
-do_render_payload(#{render_field := undefined} = Spec, _Opts) ->
-   Spec;
-do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts) when is_binary(FieldName) ->
+do_render_topic_payload(#{render_field := undefined, name := TopicName} = Spec, Opts) ->
+   Spec#{name := feed_var(TopicName, Opts)};
+do_render_topic_payload(#{name := TopicName, payload := Payload, render_field := FieldName} = Spec, Opts)
+  when is_binary(FieldName) ->
    Template = maps:get(FieldName, Payload, ""),
    SRs = [ {<<"%i">>, integer_to_binary(proplists:get_value(seq, Opts))}
          , {<<"%c">>, proplists:get_value(client_id, Opts)}
@@ -1515,7 +1518,7 @@ do_render_payload(#{payload := Payload, render_field := FieldName} = Spec, Opts)
                            ({Search, Replace}, Acc) ->
                               binary:replace(Acc, Search, Replace, [global])
                         end, Template, SRs),
-   Spec#{payload := Payload#{FieldName := NewVal}}.
+   Spec#{name := feed_var(TopicName, Opts), payload := Payload#{FieldName := NewVal}}.
 
 %% @doc shared_paddings, utilize binary ref for shallow copy
 shared_paddings(Pages) when is_binary(Pages) ->

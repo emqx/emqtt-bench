@@ -9,9 +9,11 @@ It defines topics and their associated properties.
 ### topics array:
 
 Contains a list of topic definitions.
-name string:
+
+### name string:
 
 The unique identifier or name of the MQTT topic.
+support templating with %i, %c, %u
 
 ### interval_ms string:
 
@@ -47,7 +49,9 @@ Other fields (e.g., foo1, foo2, VIN) might have specific meanings depending on t
 
 ### stream integer:
 
-A logical stream identifier,
+A logical stream identifier.
+
+Must be 0 for None QUIC transport.
 
 ### stream_priority integer:
 
