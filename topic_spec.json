@@ -1,23 +1,24 @@
 {
     "topics" : [
-        {"name": "Topic1",
+        {"name": "Topic1/%i",
+         "retain": true,
          "interval_ms": "100",
          "inject_timestamp" : true,
          "QoS": 1,
          "payload_encoding": "eterm",
          "payload": {"foo1" : "bar1", "timestamp": "0", "Data": "%p10"},
-         "stream" : 1,
+         "stream" : 0,
          "stream_priority": 200,
          "render": "Data",
         },
 
-        {"name": "Topic2",
+        {"name": "Topic2/%i",
          "interval_ms": "5000",
          "inject_timestamp" : "ms",
          "QoS": 1,
          "payload_encoding": "eterm",
          "payload": {"foo2" : "bar2", "timestamp": "0", "VIN" : "VIN", "Data": "%p2500"},
-         "stream" : 2,
+         "stream" : 0,
          "stream_priority": 8,
          "render": "Data",
         }
