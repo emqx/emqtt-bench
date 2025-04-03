@@ -1,6 +1,7 @@
 {
     "topics" : [
-        {"name": "Topic1",
+        {"name": "Topic1/%i",
+         "retain": true,
          "interval_ms": "100",
          "inject_timestamp" : true,
          "QoS": 1,

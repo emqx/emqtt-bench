@@ -851,6 +851,7 @@ publish(Client, Opts) ->
 
 
 publish_topic(Client, Topic, #{ name := TopicRendered
+                              , is_retain := IsRetain
                               , qos := QoS
                               , inject_ts := TsUnit
                               , payload := PayloadTemplate
@@ -869,7 +870,7 @@ publish_topic(Client, Topic, #{ name := TopicRendered
       end,
    update_publish_start_at(Topic),
    case emqtt:publish_async(Client, via(LogicStream, #{priority => StreamPriority}),
-                          TopicRendered, #{}, NewPayload, [{qos, QoS}],
+                          TopicRendered, #{}, NewPayload, [{qos, QoS}, {retain, IsRetain}],
                           infinity,
                           {fun(Caller, Res) ->
                                  Caller ! {publish_async_res, Res}
@@ -1473,6 +1474,7 @@ parse_topics_payload(Opts) ->
                             <<"payload_encoding">> := PayloadEncoding,
                             <<"payload">> := Payload} = Spec, Acc) ->
                            RFieldName = maps:get(<<"render">>, Spec, undefined),
+                           IsRetain = maps:get(<<"retain">>, Spec, false),
                            TSUnit = case WithTS of
                                        <<"s">> -> second;
                                        <<"ms">> -> millisecond;
@@ -1483,6 +1485,7 @@ parse_topics_payload(Opts) ->
                                     end,
                            Acc#{TopicName =>
                                    #{ name => TopicName
+                                    , is_retain => IsRetain
                                     , interval_ms => binary_to_integer(IntervalMS)
                                     , inject_ts => TSUnit
                                     , qos => QoS

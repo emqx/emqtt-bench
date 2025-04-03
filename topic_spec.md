@@ -15,6 +15,10 @@ Contains a list of topic definitions.
 The unique identifier or name of the MQTT topic.
 support templating with %i, %c, %u
 
+### retain boolean:
+
+If true, publishs message with retain flag set.
+
 ### interval_ms string:
 
 The interval in milliseconds between message injections for the topic.
