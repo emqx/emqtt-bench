@@ -143,7 +143,7 @@ jobs:
           brew install curl zip unzip gnu-sed kerl unixodbc freetds
           echo "/usr/local/bin" >> $GITHUB_PATH
           git config --global credential.helper store
-      - uses: actions/cache@13aacd865c20de90d75de3b17ebe84f7a17d57d2 # v4.0.0
+      - uses: actions/cache@v4
         id: cache
         with:
           path: ~/.kerl
