@@ -42,7 +42,7 @@ BUILD_WITHOUT_QUIC=1 make
 
 ``` sh
 Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [-V [<version>]] [-c [<count>]]
-                        [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]]
+                        [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [--shortids]
                         [-n [<startnumber>]] [--num-retry-connect [<num_retry_connect>]] [-R [<conn_rate>]]
                         [--reconnect [<reconnect>]] [-S [<ssl>]] [--ssl-version <sslversion>] [--cacertfile <cacertfile>]
                         [--certfile <certfile>] [--keyfile <keyfile>] [--ciphers <ciphers>]
@@ -64,7 +64,7 @@ Usage: emqtt_bench conn [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] 
                              either the host name or the IP address provided in the --ifaddr option, $RANDOM is a random 
                              number and $N is the sequence number assigned for each client. If provided, the $RANDOM suffix 
                              will not be added.
-  -s, --shortids             Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
+  --shortids                 Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
                              assigned sequence number. [default: false]
   -n, --startnumber          The start point when assigning sequence numbers to clients. This is useful when running 
                              multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
@@ -117,7 +117,7 @@ For example, create 50K concurrent connections at the arrival rate of 100/sec:
 
 ``` sh
 Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [-V [<version>]] [-c [<count>]]
-                       [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]]
+                       [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [--shortids]
                        [-n [<startnumber>]] [--num-retry-connect [<num_retry_connect>]] [-R [<conn_rate>]]
                        [--reconnect [<reconnect>]] [-S [<ssl>]] [--ssl-version <sslversion>] [--cacertfile <cacertfile>]
                        [--certfile <certfile>] [--keyfile <keyfile>] [--ciphers <ciphers>]
@@ -140,7 +140,7 @@ Usage: emqtt_bench sub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                              either the host name or the IP address provided in the --ifaddr option, $RANDOM is a random 
                              number and $N is the sequence number assigned for each client. If provided, the $RANDOM suffix 
                              will not be added.
-  -s, --shortids             Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
+  --shortids                 Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
                              assigned sequence number. [default: false]
   -n, --startnumber          The start point when assigning sequence numbers to clients. This is useful when running 
                              multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
@@ -198,7 +198,7 @@ For example, create 50K concurrent connections at the arrival rate of 100/sec:
 
 ``` sh
 Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [-V [<version>]] [-c [<count>]]
-                       [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [-s [<shortids>]]
+                       [-R [<conn_rate>]] [-i [<interval>]] [--ifaddr <ifaddr>] [--prefix <prefix>] [--shortids]
                        [-n [<startnumber>]] [--num-retry-connect [<num_retry_connect>]] [-R [<conn_rate>]]
                        [--reconnect [<reconnect>]] [-S [<ssl>]] [--ssl-version <sslversion>] [--cacertfile <cacertfile>]
                        [--certfile <certfile>] [--keyfile <keyfile>] [--ciphers <ciphers>]
@@ -224,7 +224,7 @@ Usage: emqtt_bench pub [--help <help>] [-d <dist>] [-h [<host>]] [-p [<port>]] [
                                 either the host name or the IP address provided in the --ifaddr option, $RANDOM is a random 
                                 number and $N is the sequence number assigned for each client. If provided, the $RANDOM 
                                 suffix will not be added.
-  -s, --shortids                Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
+  --shortids                    Use short client ID. If --prefix is provided, the prefix is added otherwise client ID is the 
                                 assigned sequence number. [default: false]
   -n, --startnumber             The start point when assigning sequence numbers to clients. This is useful when running 
                                 multiple emqtt-bench instances to test the same broker (cluster), so the start number can be 
