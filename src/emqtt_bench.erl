@@ -137,7 +137,9 @@
          {interval_of_msg, $I, "interval_of_msg", {integer, 1000},
           "interval of publishing message(ms)"},
          {topic, $t, "topic", string,
-          "topic subscribe, support %u, %c, %i, %s variables"},
+          "topic to publish, support %u (username), %c (client ID), %i (client seqno), "
+          "%s (message seqno), and %rand_N (random number) variables. "
+          "%rand_M (e.g. %rand_10 or %rand_1000 is rendered using a random number at runtime."},
          {payload_hdrs, undefined, "payload-hdrs", {string, ""},
           " If set, add optional payload headers."
           " cnt64: strictly increasing counter(64bit) per publisher"
@@ -183,7 +185,7 @@
 -define(SUB_OPTS, ?COMMON_OPTS ++
         [
          {topic, $t, "topic", string,
-          "topic subscribe, support %u, %c, %i variables"},
+          "topic subscribe, support %u (username), %c (client ID), %i (client seqno) variables"},
          {payload_hdrs, undefined, "payload-hdrs", {string, []},
           "Handle the payload header from received message. "
           "Publish side must have the same option enabled in the same order. "
@@ -1076,29 +1078,30 @@ topic_opt(Opts) ->
     feed_var(bin(proplists:get_value(topic, Opts)), Opts).
 
 feed_var(Topic, Opts) when is_binary(Topic) ->
-    PropsT = [{Var, bin(proplists:get_value(Key, Opts))} || {Key, Var} <-
-                [{seq, <<"%i">>}, {client_id, <<"%c">>}, {username, <<"%u">>}]],
-    Props = [{<<"%s">>, bin(get_counter(pub) + 1)} | PropsT],
-    lists:foldl(fun({_Var, undefined}, Acc) -> Acc;
-                   ({Var, Val}, Acc) -> feed_var(Var, Val, Acc)
-                end, Topic, Props).
+    ValFn = fun(Key) -> fun() -> bin(proplists:get_value(Key, Opts)) end end,
+    Lookups = #{<<"%i">> => ValFn(seq),
+                <<"%c">> => ValFn(client_id),
+                <<"%u">> => ValFn(username),
+                <<"%s">> => fun() -> bin(get_counter(pub) + 1) end
+               },
+    join(lists:map(fun(W) -> render(W, Lookups) end, words(Topic))).
 
-feed_var(Var, Val, Topic) ->
-    feed_var(Var, Val, words(Topic), []).
-feed_var(_Var, _Val, [], Acc) ->
-    join(lists:reverse(Acc));
-feed_var(Var, Val, [Var|Words], Acc) ->
-    feed_var(Var, Val, Words, [Val|Acc]);
-feed_var(Var, Val, [W|Words], Acc) ->
-    feed_var(Var, Val, Words, [W|Acc]).
+render(<<"%rand_", Space0/binary>>, _Dict) ->
+    Space = binary_to_integer(Space0),
+    bin(rand:uniform(Space));
+render(<<"%", _:8>> = Word, Dict) ->
+    F = maps:get(Word, Dict, fun() -> Word end),
+    F();
+render(Word, _Dict) ->
+    Word.
 
 words(Topic) when is_binary(Topic) ->
     [word(W) || W <- binary:split(Topic, <<"/">>, [global])].
 
-word(<<>>)    -> '';
+word(<<>>) -> '';
 word(<<"+">>) -> '+';
 word(<<"#">>) -> '#';
-word(Bin)     -> Bin.
+word(Bin) -> Bin.
 
 join([]) ->
     <<>>;
