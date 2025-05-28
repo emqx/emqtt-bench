@@ -1,5 +1,11 @@
 # emqtt-bench changelog
 
+## 0.5.0
+
+- Fix TCP connection crash when `SSLKEYLOGFILE` is set (for QUIC).
+- Allow topic placeholder in `topic_spec.json`
+- Add support for `%rand_N` placeholder for `pub` command. For example, `topic/%rand_1000` will result in a topic with random number in the rage of `[1, 1000]` as suffix.
+
 ## 0.4.34
 
 * new tls1.3 opt for Key exchange alg: `-keyex-algs` 
