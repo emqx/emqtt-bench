@@ -96,7 +96,7 @@
          {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
          %% == MQTT layer ==
          {username, $u, "username", string,
-          "username for connecting to server"},
+          "username for connecting to server, support '%i', '%rand_N' variables"},
          {password, $P, "password", string,
           "password for connecting to server"},
          {keepalive, $k, "keepalive", {integer, 300},
@@ -197,6 +197,25 @@
         ]).
 
 -define(CONN_OPTS, ?COMMON_OPTS).
+
+-define(COUNTER_NAMES,
+    [ publish_latency
+    , recv
+    , sub
+    , sub_fail
+    , pub
+    , pub_fail
+    , pub_overrun
+    , pub_succ
+    , connect_succ
+    , connect_fail
+    , connect_retried
+    , reconnect_succ
+    , unreachable
+    , connection_refused
+    , connection_timeout
+    , connection_idle
+    ]).
 
 -define(shared_padding_tab, emqtt_bench_shared_payload).
 -define(QoELog, qoe_dlog).
@@ -535,6 +554,7 @@ run(Parent, I, N, PubSub, Opts0, AddrList, HostList) ->
     run(Parent, I + 1, N, PubSub, Opts0, AddrList, HostList).
 
 connect(Parent, N, PubSub, Opts) ->
+    _ = erlang:put(conn_seq, N),
     process_flag(trap_exit, true),
     rand:seed(exsplus, erlang:timestamp()),
     Prometheus = lists:member(prometheus, Opts),
@@ -917,8 +937,9 @@ mqtt_opts([{version, 4}|Opts], Acc) ->
     mqtt_opts(Opts, [{proto_ver, v4}|Acc]);
 mqtt_opts([{version, 5}|Opts], Acc) ->
     mqtt_opts(Opts, [{proto_ver, v5}|Acc]);
-mqtt_opts([{username, Username}|Opts], Acc) ->
-    mqtt_opts(Opts, [{username, list_to_binary(Username)}|Acc]);
+mqtt_opts([{username, Username0}|Opts], Acc) ->
+    Username = feed_username_var(Username0),
+    mqtt_opts(Opts, [{username, bin(Username)}|Acc]);
 mqtt_opts([{password, Password}|Opts], Acc) ->
     mqtt_opts(Opts, [{password, list_to_binary(Password)}|Acc]);
 mqtt_opts([{keepalive, I}|Opts], Acc) ->
@@ -957,6 +978,14 @@ mqtt_opts([{reconnect, Reconnect}|Opts], Acc) ->
    mqtt_opts(Opts, [{reconnect, Reconnect}|Acc]);
 mqtt_opts([_|Opts], Acc) ->
     mqtt_opts(Opts, Acc).
+
+feed_username_var("%i") ->
+    erlang:get(conn_seq);
+feed_username_var("%rand_" ++ Space0) ->
+    Space = list_to_integer(Space0),
+    bin(rand:uniform(Space));
+feed_username_var(Str) ->
+    Str.
 
 tcp_opts(Opts) ->
     tcp_opts(Opts, []).
@@ -1288,23 +1317,7 @@ prepare_nst(Filename) ->
 
 -spec counters() -> {atom(), integer()}.
 counters() ->
-   Names = [ publish_latency
-           , recv
-           , sub
-           , sub_fail
-           , pub
-           , pub_fail
-           , pub_overrun
-           , pub_succ
-           , connect_succ
-           , connect_fail
-           , connect_retried
-           , reconnect_succ
-           , unreachable
-           , connection_refused
-           , connection_timeout
-           , connection_idle
-           ],
+   Names = ?COUNTER_NAMES,
    Idxs = lists:seq(2, length(Names) + 1),
    lists:zip(Names, Idxs).
 
@@ -1319,23 +1332,7 @@ maybe_init_prometheus(true) ->
                    prometheus_summary],
     application:set_env(prometheus, collectors, Collectors),
     {ok, _} = application:ensure_all_started(prometheus),
-    Counters = [ publish_latency
-               , recv
-               , sub
-               , sub_fail
-               , pub
-               , pub_fail
-               , pub_overrun
-               , pub_succ
-               , connect_succ
-               , connect_fail
-               , connect_retried
-               , reconnect_succ
-               , unreachable
-               , connection_refused
-               , connection_timeout
-               , connection_idle
-               ],
+    Counters = ?COUNTER_NAMES,
     lists:foreach(
       fun(Cnt) ->
               prometheus_counter:declare([{name, Cnt}, {help, atom_to_list(Cnt)}])
