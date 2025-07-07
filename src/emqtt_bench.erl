@@ -573,17 +573,23 @@ connect(Parent, N, PubSub, Opts) ->
     end,
 
     ClientId = client_id(PubSub, N, Opts),
-    MqttOpts = [{clientid, ClientId},
-                {tcp_opts, tcp_opts(Opts)},
-                {ssl_opts, ssl_opts(Opts)},
-                {quic_opts, quic_opts(Opts, ClientId)}
-               ]
+    MqttOpts0 = [{clientid, ClientId},
+                 {tcp_opts, tcp_opts(Opts)},
+                 {ssl_opts, ssl_opts(Opts)},
+                 {quic_opts, quic_opts(Opts, ClientId)}
+                ]
         ++ session_property_opts(Opts)
         ++ mqtt_opts(Opts),
-    MqttOpts1 = case PubSub of
-                  conn -> [{force_ping, true} | MqttOpts];
-                  _ -> MqttOpts
-                end,
+    MqttOpts1 =
+        case PubSub of
+            conn -> [{force_ping, true} | MqttOpts0];
+            _ -> MqttOpts0
+        end,
+    MqttOpts =
+        case proplists:get_bool(ws, Opts) of
+            true -> [{ws_transport_opts, [{tcp_opts, tcp_opts(Opts)}, {ssl_opts, ssl_opts(Opts)}]} | MqttOpts1];
+            false -> MqttOpts1
+        end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
     AllOpts0 = [ {seq, N}
                , {client_id, ClientId}
@@ -592,7 +598,7 @@ connect(Parent, N, PubSub, Opts) ->
                | Opts],
     TopicPayloadRend = render_topic_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
     AllOpts = replace_opts(AllOpts0, [{topics_payload, TopicPayloadRend}]),
-    {ok, Client} = emqtt:start_link(MqttOpts1),
+    {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
