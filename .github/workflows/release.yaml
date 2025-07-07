@@ -20,9 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - 26.2.5-1
+          - 27.2-3
         elixir:
-          - 1.15.7
+          - 1.18.3
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -52,20 +52,21 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
+            FROM=ghcr.io/emqx/emqx-builder/5.5-2:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
 
   linux:
     strategy:
       fail-fast: false
       matrix:
         otp:
-          - 26.2.5.2-3
+          - 27.2-3
         elixir:
-          - 1.15.7
+          - 1.18.3
         quic_support:
           - true
           - false
         os:
+          - ubuntu24.04
           - ubuntu22.04
           - ubuntu20.04
           - debian12
@@ -76,11 +77,11 @@ jobs:
           - amzn2
           - amzn2023
         arch:
-          - ""
-          - "-arm"
-    runs-on: ubuntu-22.04${{ matrix.arch }}
+          - amd64
+          - arm64
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     env:
-      IMAGE: ghcr.io/emqx/emqx-builder/5.4-4:1.15.7-${{ matrix.otp }}-${{ matrix.os }}
+      IMAGE: ghcr.io/emqx/emqx-builder/5.5-2:1.18.3-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -118,7 +119,7 @@ jobs:
           popd
       - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}${{ matrix.arch }}"
+          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}-${{ matrix.arch }}"
           path: ./*.tar.gz
 
   mac:
@@ -126,10 +127,10 @@ jobs:
       fail-fast: false
       matrix:
         macos:
-          - macos-13
           - macos-14
+          - macos-15
         otp:
-          - 26.2.5-1
+          - 27.2-3
 
     runs-on: ${{ matrix.macos }}
 

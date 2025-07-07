@@ -893,7 +893,7 @@ publish_topic(Client, Topic, #{ name := TopicRendered
                 end,
    NewPayload =
       case PayloadEncoding of
-         json -> jsx:encode(Payload1);
+         json -> json:encode(Payload1);
          eterm -> maybe_prefix_payload(term_to_binary(Payload1), ClientOpts)
       end,
    update_publish_start_at(Topic),
@@ -1470,7 +1470,7 @@ parse_topics_payload(Opts) ->
       undefined -> undefined;
       Filename ->
          {ok, Content} = file:read_file(Filename),
-         #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
+         #{<<"topics">> := TopicSpecs} = json:decode(Content),
          lists:foldl(fun(#{ <<"name">> := TopicName,
                             <<"inject_timestamp">> := WithTS,
                             <<"interval_ms">> := IntervalMS,

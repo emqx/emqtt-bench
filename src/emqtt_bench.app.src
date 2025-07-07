@@ -8,7 +8,6 @@
                   getopt,
                   gun,
                   cowlib,
-                  jsx,
                   prometheus,
                   quantile_estimator,
                   cowboy
