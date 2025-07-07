@@ -54,6 +54,7 @@ jobs:
           - true
           - false
         os:
+          - ubuntu22.04
           - ubuntu24.04
         arch:
           - amd64
@@ -103,7 +104,7 @@ jobs:
           fetch-depth: 0
       - name: prepare
         run: |
-          brew install curl zip unzip gnu-sed kerl unixodbc freetds
+          brew install curl zip unzip gnu-sed kerl unixodbc freetds openssl
           echo "/usr/local/bin" >> $GITHUB_PATH
           git config --global credential.helper store
       - uses: actions/cache@v4
@@ -116,12 +117,13 @@ jobs:
         timeout-minutes: 60
         env:
           OTP: ${{ matrix.otp }}
-          KERL_CONFIGURE_OPTIONS: '--disable-hipe --disable-jit'
         run: |
           set -eux
           kerl delete build $OTP || true
           kerl delete installation $OTP || true
           rm -rf $HOME/.kerl/$OTP
+          export KERL_CONFIGURE_OPTIONS="--disable-hipe --disable-jit --disable-dynamic-ssl-lib --with-ssl=$(brew --prefix openssl)"
+          export MAKEFLAGS=-j$(nproc)
           kerl build git https://github.com/emqx/otp.git OTP-$OTP $OTP
           kerl install $OTP $HOME/.kerl/$OTP
       - name: build
@@ -133,8 +135,10 @@ jobs:
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           APPLE_DEVELOPER_ID_BUNDLE: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE }}
           APPLE_DEVELOPER_ID_BUNDLE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD }}
+          QUICER_TLS_VER: openssl3
         run: |
           . $HOME/.kerl/$OTP/activate
+          export QUICER_TLS_VER
           make
       - if: failure()
         run: cat rebar3.crashdump
