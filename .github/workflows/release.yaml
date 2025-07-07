@@ -141,39 +141,21 @@ jobs:
           ref: ${{ github.event.inputs.branch_or_tag }}
       - name: prepare
         run: |
-          brew install curl zip unzip gnu-sed kerl unixodbc freetds
+          brew install curl zip unzip gnu-sed freetds erlang@$OTP
           echo "/usr/local/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix erlang@$OTP)/bin" >> $GITHUB_PATH
           git config --global credential.helper store
-      - uses: actions/cache@v4
-        id: cache
-        with:
-          path: ~/.kerl
-          key: otp-${{ matrix.otp }}-${{ matrix.macos }}
-      - name: build erlang
-        if: steps.cache.outputs.cache-hit != 'true'
-        timeout-minutes: 60
-        env:
-          OTP: ${{ matrix.otp }}
-          KERL_CONFIGURE_OPTIONS: '--disable-hipe --disable-jit'
-        run: |
-          set -eux
-          kerl delete build $OTP || true
-          kerl delete installation $OTP || true
-          rm -rf $HOME/.kerl/$OTP
-          kerl build git https://github.com/emqx/otp.git OTP-$OTP $OTP
-          kerl install $OTP $HOME/.kerl/$OTP
       - name: build
         env:
-          OTP: ${{ matrix.otp }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           APPLE_DEVELOPER_ID_BUNDLE: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE }}
           APPLE_DEVELOPER_ID_BUNDLE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD }}
-          QUICER_TLS_VER: openssl3
+          BUILD_WITHOUT_QUIC: 1
         run: |
-          . $HOME/.kerl/$OTP/activate
+          erl -eval 'erlang:display(erlang:system_info(system_version)),halt()'
           make
       - if: failure()
         run: cat rebar3.crashdump
