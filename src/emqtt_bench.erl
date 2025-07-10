@@ -574,10 +574,9 @@ connect(Parent, N, PubSub, Opts) ->
 
     ClientId = client_id(PubSub, N, Opts),
     MqttOpts0 = [{clientid, ClientId},
-                 {tcp_opts, tcp_opts(Opts)},
-                 {ssl_opts, ssl_opts(Opts)},
-                 {quic_opts, quic_opts(Opts, ClientId)}
-                ]
+                 {tcp_opts, tcp_opts(Opts)}]
+        ++ [{ssl_opts, ssl_opts(Opts)} || proplists:get_bool(ssl, Opts)]
+        ++ [{quic_opts, quic_opts(Opts, ClientId)}]
         ++ session_property_opts(Opts)
         ++ mqtt_opts(Opts),
     MqttOpts1 =
@@ -587,8 +586,13 @@ connect(Parent, N, PubSub, Opts) ->
         end,
     MqttOpts =
         case proplists:get_bool(ws, Opts) of
-            true -> [{ws_transport_opts, [{tcp_opts, tcp_opts(Opts)}, {ssl_opts, ssl_opts(Opts)}]} | MqttOpts1];
-            false -> MqttOpts1
+            true ->
+                WsOpts = [{tcp_opts, tcp_opts(Opts)}]
+                      ++ [{transport, tls} || proplists:get_bool(ssl, Opts)]
+                      ++ [{tls_opts, ssl_opts(Opts)} || proplists:get_bool(ssl, Opts)],
+                [{ws_transport_options, WsOpts} | MqttOpts1];
+            false ->
+                MqttOpts1
         end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
     AllOpts0 = [ {seq, N}
