@@ -9,9 +9,9 @@ jobs:
       fail-fast: false
       matrix:
         otp:
-          - 26.2.5-1
+          - 27.2-3
         elixir:
-          - 1.15.7
+          - 1.18.3
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -39,25 +39,29 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            FROM=ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
+            FROM=ghcr.io/emqx/emqx-builder/5.5-2:${{ matrix.elixir }}-${{ matrix.otp }}-debian12
 
   linux:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
       matrix:
         otp:
-          - 26.2.5-1
+          - 27.2-3
         elixir:
-          - 1.15.7
+          - 1.18.3
         quic_support:
           - true
           - false
         os:
           - ubuntu22.04
+          - ubuntu24.04
+        arch:
+          - amd64
+          - arm64
 
     container:
-      image: ghcr.io/emqx/emqx-builder/5.3-7:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
+      image: ghcr.io/emqx/emqx-builder/5.5-2:${{ matrix.elixir }}-${{ matrix.otp }}-${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -80,7 +84,7 @@ jobs:
           bin/emqtt_bench
       - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}"
+          name: "emqtt-bench-${{ matrix.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-${{ matrix.quic_support }}-${{ matrix.arch }}"
           path: ./*.tar.gz
 
   mac:
@@ -88,9 +92,9 @@ jobs:
       fail-fast: false
       matrix:
         macos:
-          - macos-14
+          - macos-15
         otp:
-          - 26.2.5-1
+          - 27
 
     runs-on: ${{ matrix.macos }}
 
@@ -99,39 +103,24 @@ jobs:
         with:
           fetch-depth: 0
       - name: prepare
-        run: |
-          brew install curl zip unzip gnu-sed kerl unixodbc freetds
-          echo "/usr/local/bin" >> $GITHUB_PATH
-          git config --global credential.helper store
-      - uses: actions/cache@v4
-        id: cache
-        with:
-          path: ~/.kerl
-          key: otp-${{ matrix.otp }}-${{ matrix.macos }}
-      - name: build erlang
-        if: steps.cache.outputs.cache-hit != 'true'
-        timeout-minutes: 60
         env:
           OTP: ${{ matrix.otp }}
-          KERL_CONFIGURE_OPTIONS: '--disable-hipe --disable-jit'
         run: |
-          set -eux
-          kerl delete build $OTP || true
-          kerl delete installation $OTP || true
-          rm -rf $HOME/.kerl/$OTP
-          kerl build git https://github.com/emqx/otp.git OTP-$OTP $OTP
-          kerl install $OTP $HOME/.kerl/$OTP
+          brew install curl zip unzip gnu-sed freetds erlang@$OTP
+          echo "/usr/local/bin" >> $GITHUB_PATH
+          echo "$(brew --prefix erlang@$OTP)/bin" >> $GITHUB_PATH
+          git config --global credential.helper store
       - name: build
         env:
-          OTP: ${{ matrix.otp }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
           APPLE_DEVELOPER_ID_BUNDLE: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE }}
           APPLE_DEVELOPER_ID_BUNDLE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD }}
+          BUILD_WITHOUT_QUIC: 1
         run: |
-          . $HOME/.kerl/$OTP/activate
+          erl -eval 'erlang:display(erlang:system_info(system_version)),halt()'
           make
       - if: failure()
         run: cat rebar3.crashdump

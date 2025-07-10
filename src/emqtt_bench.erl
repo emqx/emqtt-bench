@@ -573,17 +573,27 @@ connect(Parent, N, PubSub, Opts) ->
     end,
 
     ClientId = client_id(PubSub, N, Opts),
-    MqttOpts = [{clientid, ClientId},
-                {tcp_opts, tcp_opts(Opts)},
-                {ssl_opts, ssl_opts(Opts)},
-                {quic_opts, quic_opts(Opts, ClientId)}
-               ]
+    MqttOpts0 = [{clientid, ClientId},
+                 {tcp_opts, tcp_opts(Opts)}]
+        ++ [{ssl_opts, ssl_opts(Opts)} || proplists:get_bool(ssl, Opts)]
+        ++ [{quic_opts, quic_opts(Opts, ClientId)}]
         ++ session_property_opts(Opts)
         ++ mqtt_opts(Opts),
-    MqttOpts1 = case PubSub of
-                  conn -> [{force_ping, true} | MqttOpts];
-                  _ -> MqttOpts
-                end,
+    MqttOpts1 =
+        case PubSub of
+            conn -> [{force_ping, true} | MqttOpts0];
+            _ -> MqttOpts0
+        end,
+    MqttOpts =
+        case proplists:get_bool(ws, Opts) of
+            true ->
+                WsOpts = [{tcp_opts, tcp_opts(Opts)}]
+                      ++ [{transport, tls} || proplists:get_bool(ssl, Opts)]
+                      ++ [{tls_opts, ssl_opts(Opts)} || proplists:get_bool(ssl, Opts)],
+                [{ws_transport_options, WsOpts} | MqttOpts1];
+            false ->
+                MqttOpts1
+        end,
     RandomPubWaitMS = random_pub_wait_period(Opts),
     AllOpts0 = [ {seq, N}
                , {client_id, ClientId}
@@ -592,7 +602,7 @@ connect(Parent, N, PubSub, Opts) ->
                | Opts],
     TopicPayloadRend = render_topic_payload(proplists:get_value(topics_payload, Opts), AllOpts0 ++ MqttOpts),
     AllOpts = replace_opts(AllOpts0, [{topics_payload, TopicPayloadRend}]),
-    {ok, Client} = emqtt:start_link(MqttOpts1),
+    {ok, Client} = emqtt:start_link(MqttOpts),
     ConnectFun = connect_fun(Opts),
     ConnRet = emqtt:ConnectFun(Client),
     ContinueFn = fun() -> loop(Parent, N, Client, PubSub, loop_opts(AllOpts)) end,
@@ -887,7 +897,7 @@ publish_topic(Client, Topic, #{ name := TopicRendered
                 end,
    NewPayload =
       case PayloadEncoding of
-         json -> jsx:encode(Payload1);
+         json -> json:encode(Payload1);
          eterm -> maybe_prefix_payload(term_to_binary(Payload1), ClientOpts)
       end,
    update_publish_start_at(Topic),
@@ -1464,7 +1474,7 @@ parse_topics_payload(Opts) ->
       undefined -> undefined;
       Filename ->
          {ok, Content} = file:read_file(Filename),
-         #{<<"topics">> := TopicSpecs} = jsx:decode(Content),
+         #{<<"topics">> := TopicSpecs} = json:decode(Content),
          lists:foldl(fun(#{ <<"name">> := TopicName,
                             <<"inject_timestamp">> := WithTS,
                             <<"interval_ms">> := IntervalMS,
