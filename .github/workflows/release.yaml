@@ -126,13 +126,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        macos:
+        os:
           - macos-14
           - macos-15
         otp:
-          - 27.2-3
+          - 27
 
-    runs-on: ${{ matrix.macos }}
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -140,6 +140,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.inputs.branch_or_tag }}
       - name: prepare
+        env:
+          OTP: ${{ matrix.otp }}
         run: |
           brew install curl zip unzip gnu-sed freetds erlang@$OTP
           echo "/usr/local/bin" >> $GITHUB_PATH
@@ -151,8 +153,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
           APPLE_DEVELOPER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_IDENTITY }}
-          APPLE_DEVELOPER_ID_BUNDLE: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE }}
-          APPLE_DEVELOPER_ID_BUNDLE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD }}
+          APPLE_DEVELOPER_ID_BUNDLE: ${{ matrix.os == 'macos-14' && secrets.APPLE_DEVELOPER_ID_BUNDLE || secrets.APPLE_DEVELOPER_ID_BUNDLE_NEW }}
+          APPLE_DEVELOPER_ID_BUNDLE_PASSWORD: ${{ matrix.os == 'macos-14' && secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD || secrets.APPLE_DEVELOPER_ID_BUNDLE_PASSWORD_NEW }}
           BUILD_WITHOUT_QUIC: 1
         run: |
           erl -eval 'erlang:display(erlang:system_info(system_version)),halt()'
@@ -169,7 +171,7 @@ jobs:
           bin/emqtt_bench
       - uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "emqtt-bench-${{ matrix.otp }}-${{ matrix.macos }}"
+          name: "emqtt-bench-${{ matrix.otp }}-${{ matrix.os }}"
           path: ./*.zip
 
   release:
