@@ -1,11 +1,11 @@
-ARG FROM=ghcr.io/emqx/emqx-builder/5.5-2:1.18.3-27.2-3-debian12
+ARG FROM=ghcr.io/emqx/emqx-builder/5.6-3:1.18.3-27.3.4.2-4-debian13
 FROM ${FROM} AS builder
 COPY . /emqtt_bench
 WORKDIR /emqtt_bench
 ENV BUILD_WITHOUT_QUIC=1
 RUN make release
 
-FROM debian:12-slim
+FROM debian:13-slim
 
 COPY --from=builder /emqtt_bench/emqtt-bench-*.tar.gz /emqtt_bench/
 
