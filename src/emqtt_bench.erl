@@ -179,7 +179,9 @@
           "Publisher's resend interval (in seconds) if the expected "
           "acknowledgement for a inflight packet is not "
           "received within this interval. Default value 0 means no resend."
-         }
+         },
+         {keep_connected, undefined, "keep-connected", {boolean, false},
+          "Keep the clients connected after publish reached the limit -L specified by"}
         ]).
 
 -define(SUB_OPTS, ?COMMON_OPTS ++
@@ -429,6 +431,10 @@ init() ->
 
 main_loop(Uptime, Count) ->
     receive
+        publish_complete_no_exit ->
+            disk_log:close(?QoELog),
+            return_print("publish complete~n", []),
+            main_loop_no_op();
         publish_complete ->
             disk_log:close(?QoELog),
             return_print("publish complete~n", []);
@@ -441,6 +447,12 @@ main_loop(Uptime, Count) ->
         Msg ->
             print("main_loop_msg: ~p~n", [Msg]),
             main_loop(Uptime, Count)
+    end.
+
+main_loop_no_op() ->
+    receive
+        _Msg ->
+            main_loop_no_op()
     end.
 
 maybe_dump_nst_dets(Count)->
@@ -679,7 +691,9 @@ loop(Parent, N, Client, PubSub, Opts) ->
             erlang:send_after(RandomPubWaitMS, self(), publish),
             loop(Parent, N, Client, PubSub, Opts);
         publish = Trigger->
-           case (proplists:get_value(limit_fun, Opts))() of
+            LimitFn = proplists:get_value(limit_fun, Opts),
+            IsKeepConnected = proplists:get_bool(keep_connected, Opts),
+            case LimitFn() of
                 true ->
                     %% this call hangs if emqtt inflight is full
                     case publish(Client, Opts) of
@@ -693,6 +707,10 @@ loop(Parent, N, Client, PubSub, Opts) ->
                             io:format("client(~w): publish error - ~p~n", [N, Reason])
                     end,
                     loop(Parent, N, Client, PubSub, Opts);
+               _ when IsKeepConnected ->
+                   %% do not schedule next publish, do not exit either
+                    Parent ! publish_complete_no_exit,
+                    proc_lib:hibernate(?MODULE, loop, [Parent, N, Client, PubSub, Opts]);
                 _ ->
                     Parent ! publish_complete,
                     exit(normal)
@@ -893,7 +911,7 @@ publish_topic(Client, Topic, #{ name := TopicRendered
                               }, ClientOpts) ->
    Payload1 = case TsUnit of
                    false -> PayloadTemplate;
-                   _ -> PayloadTemplate#{<<"timestamp">> => erlang:system_time(TsUnit)}
+                   _ -> PayloadTemplate#{<<"timestamp">> => os:system_time(TsUnit)}
                 end,
    NewPayload =
       case PayloadEncoding of
@@ -1185,6 +1203,7 @@ loop_opts(Opts) ->
                                          , seq
                                          , publish_signal_mref
                                          , pub_start_wait
+                                         , keep_connected
                                          ]);
                      (K) -> K =:= prometheus
                  end, Opts).
