@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.6.0
+
+- Add option `--keep-connected' to keep the publishing clients connected after reaching the total number of messages limit defined by the `-L` option.
+
 ## 0.5.0
 
 - Fix TCP connection crash when `SSLKEYLOGFILE` is set (for QUIC).
