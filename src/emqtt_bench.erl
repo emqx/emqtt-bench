@@ -93,7 +93,12 @@
           "QUIC transport"},
          {ws, undefined, "ws", {boolean, false},
           "websocket transport"},
-         {nst_dets_file, undefined, "load-qst", string, "load quic session tickets from dets file"},
+         {nst_dets_file, undefined, "load-qst", string, "Load QUIC session tickets from dets file."
+          "The client will utilize 0-RTT for QUIC connection if its session ticket, associated with the client ID, is present in the file."
+          "The client will refresh the session ticket upon receiving a new one from the broker."
+          "To test the 0-RTT scenario, execute the process twice: the first run retrieves the session ticket from the broker and saves it to the file,"
+          "enabling the second run to use the session ticket for a 0-RTT connection."
+         },
          %% == MQTT layer ==
          {username, $u, "username", string,
           "username for connecting to server, support '%i', '%rand_N' variables"},
