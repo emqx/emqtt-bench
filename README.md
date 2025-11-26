@@ -333,6 +333,28 @@ ulimit -n 200000
 sudo sysctl -w net.ipv4.ip_local_port_range="1025 65534"
 ```
 
+## Running on small devices (e.g. raspberrypi3)
+
+`emqtt_bench` is tuned for millions of the connections, some resources are pre allocated during the start.
+It is overkill for small devices that may only setup hundreds of conns.
+
+Here is how you limit the pre allocations and make it start faster. 
+
+1. Load **64-bit** OS image on raspberrypi.
+
+e.g. `Ubuntu Server 24.04.3 LTS (64-bit)`
+
+1. Download proper prebuild from the release page that matches the OS.
+
+e.g. `emqtt-bench-0.6.0-ubuntu24.04-arm64-quic.tar.gz` 
+
+1. After untar, execute the `emqtt_bench` with additional environment variables.
+
+``` sh
+ERL_MAX_PORTS=1024  ERL_FLAGS="+P 1024" bin/emqtt_bench pub -t /from/rpi3 -s 2048 -q 1 -I 2000
+```
+
+
 ## Author
 
 EMQX Team.
