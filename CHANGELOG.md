@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.6.1
+
+- Report `PUBACK` failure counters. Reason code 0x10 (16) is recorded as `pub_nosub` and other reason codes are recorded as `pub_fail`.
+
 ## 0.6.0
 
 - Add option `--keep-connected' to keep the publishing clients connected after reaching the total number of messages limit defined by the `-L` option.
