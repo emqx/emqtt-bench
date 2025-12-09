@@ -214,6 +214,7 @@
     , pub_fail
     , pub_overrun
     , pub_succ
+    , pub_nosub % no subscribers
     , connect_succ
     , connect_fail
     , connect_retried
@@ -466,9 +467,7 @@ maybe_dump_nst_dets(Count)->
       andalso ets:to_dets(quic_clients_nsts, dets_quic_nsts).
 
 print_stats(Uptime) ->
-    [print_stats(Uptime, Cnt) ||
-        {Cnt, _Idx} <- counters()],
-    ok.
+    lists:foreach(fun({Cnt, _Idx}) -> print_stats(Uptime, Cnt) end,  counters()).
 
 print_stats(Uptime, Name) ->
     CurVal = get_counter(Name),
@@ -737,8 +736,14 @@ loop(Parent, N, Client, PubSub, Opts) ->
        {publish_async_res, ok} ->
           inc_counter(Prometheus, pub),
           loop(Parent, N, Client, PubSub, Opts);
-       {publish_async_res, {ok, _}} ->
-          inc_counter(Prometheus, pub),
+       {publish_async_res, {ok, #{reason := ?RC_NO_MATCHING_SUBSCRIBERS}}} ->
+          inc_counter(Prometheus, pub_nosub),
+          loop(Parent, N, Client, PubSub, Opts);
+       {publish_async_res, {ok, #{reason := ?RC_SUCCESS}}} ->
+          inc_counter(Prometheus, pub_succ),
+          loop(Parent, N, Client, PubSub, Opts);
+       {publish_async_res, {ok, #{reason := _}}} ->
+          inc_counter(Prometheus, pub_fail),
           loop(Parent, N, Client, PubSub, Opts);
        {publish_async_res, {error, _}} ->
           inc_counter(Prometheus, pub_fail),
@@ -752,10 +757,6 @@ loop(Parent, N, Client, PubSub, Opts) ->
             ok;
         {'EXIT', _Client, Reason} ->
             io:format("client(~w): EXIT for ~p~n", [N, Reason]);
-        {puback, _} ->
-            %% Publish success for QoS 1 (recv puback) and 2 (recv pubcomp)
-            inc_counter(Prometheus, pub_succ),
-            loop(Parent, N, Client, PubSub, Opts);
         {disconnected, ReasonCode, _Meta} ->
             io:format("client(~w): disconnected with reason ~w: ~p~n",
                       [N, ReasonCode, emqtt:reason_code_name(ReasonCode)]);
@@ -874,6 +875,7 @@ publish(Client, Opts) ->
                {retain, proplists:get_value(retain, Opts)}],
     Size = proplists:get_value(payload_size, Opts),
     Payload0 = proplists:get_value(payload, Opts),
+    Prometheus = lists:member(prometheus, Opts),
     Payload = case Payload0 of
                   {template, Bin} ->
                       Now = os:system_time(nanosecond),
@@ -899,9 +901,21 @@ publish(Client, Opts) ->
     %% prefix dynamic headers.
     NewPayload = maybe_prefix_payload(Payload, Opts),
     case emqtt:publish(Client, topic_opt(Opts), NewPayload, Flags) of
-        ok -> ok;
-        {ok, _} -> ok;
-        {error, Reason} -> {error, Reason}
+        ok ->
+            inc_counter(Prometheus, pub),
+            ok;
+        {ok, #{reason_code := ?RC_NO_MATCHING_SUBSCRIBERS}} ->
+            inc_counter(Prometheus, pub_nosub),
+            ok;
+        {ok, #{reason_code := ?RC_SUCCESS}} ->
+            inc_counter(Prometheus, pub_succ),
+            ok;
+        {ok, #{reason_code := _}} ->
+            inc_counter(Prometheus, pub_fail),
+            ok;
+        {error, Reason} ->
+            inc_counter(Prometheus, pub_fail),
+            {error, Reason}
     end.
 
 
