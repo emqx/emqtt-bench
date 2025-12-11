@@ -9,7 +9,7 @@ You can download pre-built binary packeges from https://github.com/emqx/emqtt-be
 
 ## Build from source code
 
-NOTE: Requires **Erlang/OTP 22.3+** to build.
+NOTE: Requires **Erlang/OTP 27.2+** to build.
 
 ### Install dependencies
 
