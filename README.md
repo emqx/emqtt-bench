@@ -351,7 +351,7 @@ e.g. `emqtt-bench-0.6.0-ubuntu24.04-arm64-quic.tar.gz`
 1. After untar, execute the `emqtt_bench` with additional environment variables.
 
 ``` sh
-ERL_MAX_PORTS=1024  ERL_FLAGS="+P 1024" bin/emqtt_bench pub -t /from/rpi3 -s 2048 -q 1 -I 2000
+ERL_ZFLAGS="+P 1024 -env ERL_MAX_PORTS 1024" bin/emqtt_bench pub -t /from/rpi3 -s 2048 -q 1 -I 2000
 ```
 
 
