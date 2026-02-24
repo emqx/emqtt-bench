@@ -1,5 +1,9 @@
 # emqtt-bench changelog
 
+## 0.6.2
+
+- Fix unknown message `{publish_async_res, ...` when `--topics-payload` is in use.
+
 ## 0.6.1
 
 - Report `PUBACK` failure counters. Reason code 0x10 (16) is recorded as `pub_nosub` and other reason codes are recorded as `pub_fail`.
