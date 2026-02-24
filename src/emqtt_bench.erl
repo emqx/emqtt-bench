@@ -736,13 +736,13 @@ loop(Parent, N, Client, PubSub, Opts) ->
        {publish_async_res, ok} ->
           inc_counter(Prometheus, pub),
           loop(Parent, N, Client, PubSub, Opts);
-       {publish_async_res, {ok, #{reason := ?RC_NO_MATCHING_SUBSCRIBERS}}} ->
+       {publish_async_res, {ok, #{reason_code := ?RC_NO_MATCHING_SUBSCRIBERS}}} ->
           inc_counter(Prometheus, pub_nosub),
           loop(Parent, N, Client, PubSub, Opts);
-       {publish_async_res, {ok, #{reason := ?RC_SUCCESS}}} ->
+       {publish_async_res, {ok, #{reason_code := ?RC_SUCCESS}}} ->
           inc_counter(Prometheus, pub_succ),
           loop(Parent, N, Client, PubSub, Opts);
-       {publish_async_res, {ok, #{reason := _}}} ->
+       {publish_async_res, {ok, #{reason_code := _}}} ->
           inc_counter(Prometheus, pub_fail),
           loop(Parent, N, Client, PubSub, Opts);
        {publish_async_res, {error, _}} ->
