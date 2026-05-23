@@ -1,5 +1,11 @@
 # emqtt-bench changelog
 
+## 0.6.3
+
+- New Option `--active` for fine tune client erlang ports.
+- Bump rebar3 to 3.24.0-emqx-1
+- Fix macOS release
+
 ## 0.6.2
 
 - Fix unknown message `{publish_async_res, ...` when `--topics-payload` is in use.

@@ -13,7 +13,7 @@ case ${OTP_VSN} in
         VERSION="3.24.0-emqx-1"
         ;;
     27*)
-        VERSION="3.20.0-emqx-3"
+        VERSION="3.24.0-emqx-1"
         ;;
     26*)
         VERSION="3.20.0-emqx-1"

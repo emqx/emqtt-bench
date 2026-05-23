@@ -49,6 +49,14 @@
 -define(COMMON_OPTS,
         [{help, undefined, "help", boolean,
           "help information"},
+         {active, $A, "active", {string, "once"},
+          "Config the client socket opt: " 
+          "\"once\": Legacy default. Suitable for high-concurrency clients with low message frequency. "
+          "\"true\": Highly active (recommended). Optimized for full speed; ideal for high-frequency messages and balanced scheduling. "
+          "\"false\": Disables receiving. "
+          "100: Starts slow but optimizes after 100 network packets are received. "
+          "* Use another integer value to fine-tune. "
+         },
          {dist, $d, "dist", boolean,
           "enable distribution port"},
          %% == Traffic related ==
@@ -1038,8 +1046,16 @@ tcp_opts(Opts) ->
     tcp_opts(Opts, []).
 tcp_opts([], Acc) ->
     Acc;
+tcp_opts([{active, V} | Opts], Acc) ->
+    Active = case V of
+                 "once" -> once;
+                 "true" -> true;
+                 "false" -> false;
+                 Int -> list_to_integer(Int)
+             end,
+    tcp_opts(Opts, [{active, Active} | Acc]);
 tcp_opts([{lowmem, true} | Opts], Acc) ->
-    tcp_opts(Opts, [{recbuf, 64} , {sndbuf, 64} | Acc]);
+    tcp_opts(Opts, [{recbuf, 64} , {sndbuf, 64}, {buffer, 200} | Acc]);
 tcp_opts([{ifaddr, IfAddr} | Opts], Acc) ->
     case inet_parse:address(IfAddr) of
         {ok, IpAddr} ->

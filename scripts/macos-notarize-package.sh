@@ -3,17 +3,37 @@
 set -euo pipefail
 
 # intended to run on MacOS only
-if [ $(uname) != 'Darwin' ]; then
+if [ $(uname -o) != 'Darwin' ]; then
     echo 'Not macOS, exiting';
     exit 0;
 fi
 
-pushd "${RELX_TEMP_DIR}"
+RELX_OUTPUT_DIR="_build/emqtt_bench/rel/"
+# Find the tar.gz file created by relx
+TAR_GZ_FILE=$(realpath $(find "${RELX_OUTPUT_DIR}" -name "*.tar.gz" | tail -1))
 
-ZIP_PACKAGE_PATH="${1:-${RELX_OUTPUT_DIR}/${RELX_RELEASE_NAME}-${RELX_RELEASE_VSN}.zip}"
-zip -qr "${ZIP_PACKAGE_PATH}" .
+if [ -z "$TAR_GZ_FILE" ]; then
+    echo "No tar.gz file found in ${RELX_OUTPUT_DIR}"
+    exit 1
+fi
 
-popd
+echo "Found tar.gz: $TAR_GZ_FILE"
+
+# Create temporary directory for extraction
+TEMP_DIR=$(mktemp -d -p $PWD)
+trap "rm -rf $TEMP_DIR" EXIT
+
+echo "Extracting to temporary directory: $TEMP_DIR"
+tar -C "$TEMP_DIR" -xzf "$TAR_GZ_FILE"
+
+# Create zip from extracted contents
+ZIP_PACKAGE_PATH="${TAR_GZ_FILE%%.tar*}.zip"
+echo "Creating zip: $ZIP_PACKAGE_PATH"
+
+cd "$TEMP_DIR"
+zip -qr "$ZIP_PACKAGE_PATH" .
+
+echo "Zip file created successfully"
 
 if [[ "${APPLE_ID:-0}" == 0 || "${APPLE_ID_PASSWORD:-0}" == 0 || "${APPLE_TEAM_ID:-0}" == 0 ]]; then
     echo "Apple ID is not configured, skipping notarization."

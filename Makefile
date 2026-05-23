@@ -6,6 +6,8 @@ all: release
 .PHONY: release
 release: compile
 	$(REBAR) as emqtt_bench tar
+	@$(CURDIR)/scripts/macos-sign-binaries.sh
+	@$(CURDIR)/scripts/macos-notarize-package.sh
 	@$(CURDIR)/scripts/rename-package.sh
 
 .PHONY: pre-release
