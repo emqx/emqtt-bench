@@ -3,28 +3,33 @@
 set -euo pipefail
 
 # intended to run on MacOS only
-if [ $(uname -o) != 'Darwin' ]; then
+if [ "$(uname -s)" != 'Darwin' ]; then
     echo 'Not macOS, exiting';
     exit 0;
 fi
 
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RELX_OUTPUT_DIR="_build/emqtt_bench/rel/"
 # Find the tar.gz file created by relx
-TAR_GZ_FILE=$(realpath $(find "${RELX_OUTPUT_DIR}" -name "*.tar.gz" | tail -1))
+TAR_GZ_FILE=$(find "${RELX_OUTPUT_DIR}" -name "*.tar.gz" | tail -1)
 
 if [ -z "$TAR_GZ_FILE" ]; then
     echo "No tar.gz file found in ${RELX_OUTPUT_DIR}"
     exit 1
 fi
+TAR_GZ_FILE=$(realpath "$TAR_GZ_FILE")
 
 echo "Found tar.gz: $TAR_GZ_FILE"
 
 # Create temporary directory for extraction
-TEMP_DIR=$(mktemp -d -p $PWD)
-trap "rm -rf $TEMP_DIR" EXIT
+TEMP_DIR=$(mktemp -d "$PWD/tmp.XXXXXXXXXX")
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 echo "Extracting to temporary directory: $TEMP_DIR"
 tar -C "$TEMP_DIR" -xzf "$TAR_GZ_FILE"
+
+# Sign the extracted files that will actually be included in the ZIP.
+RELX_TEMP_DIR="$TEMP_DIR" "$SCRIPT_DIR/macos-sign-binaries.sh"
 
 # Create zip from extracted contents
 ZIP_PACKAGE_PATH="${TAR_GZ_FILE%%.tar*}.zip"

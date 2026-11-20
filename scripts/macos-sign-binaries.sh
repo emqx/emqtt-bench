@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-if [ $(uname) != 'Darwin' ]; then
+if [ "$(uname -s)" != 'Darwin' ]; then
     echo 'Not macOS, exiting';
     exit 0;
 fi
@@ -22,18 +22,28 @@ if [[ "${APPLE_DEVELOPER_ID_BUNDLE:-0}" == 0 || "${APPLE_DEVELOPER_ID_BUNDLE_PAS
     exit 0
 fi
 
-PKSC12_FILE="$HOME/developer-id-application.p12"
-printf '%s' "${APPLE_DEVELOPER_ID_BUNDLE}" | base64 --decode > "${PKSC12_FILE}"
+: "${RELX_TEMP_DIR:?Release directory is required for signing}"
+: "${APPLE_DEVELOPER_IDENTITY:?Apple developer signing identity is required}"
+if [ ! -d "$RELX_TEMP_DIR" ]; then
+    echo "Release directory does not exist: $RELX_TEMP_DIR" >&2
+    exit 1
+fi
 
 KEYCHAIN="emqtt-bench-$(date +%s).keychain-db"
 KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-
-trap cleanup EXIT
+SIGNING_TEMP_DIR=$(mktemp -d)
 
 function cleanup {
-    set +e
-    security delete-keychain "${KEYCHAIN}" 2>/dev/null
+    local status=$?
+    trap - EXIT
+    security delete-keychain "${KEYCHAIN}" 2>/dev/null || true
+    rm -rf "$SIGNING_TEMP_DIR" || true
+    exit "$status"
 }
+trap cleanup EXIT
+
+PKSC12_FILE="$SIGNING_TEMP_DIR/developer-id-application.p12"
+printf '%s' "${APPLE_DEVELOPER_ID_BUNDLE}" | base64 --decode > "${PKSC12_FILE}"
 
 security create-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}"
 security set-keychain-settings "${KEYCHAIN}"
@@ -41,8 +51,8 @@ security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}"
 security import "${PKSC12_FILE}" -P "${APPLE_DEVELOPER_ID_BUNDLE_PASSWORD}" -t cert -f pkcs12 -k "${KEYCHAIN}" -T /usr/bin/codesign
 security set-key-partition-list -S "apple-tool:,apple:,codesign:" -s -k "${KEYCHAIN_PASSWORD}" "${KEYCHAIN}"
 if [ "$(sw_vers -productVersion | cut -d'.' -f1)" -ge 15 ]; then
-  openssl pkcs12 -in "${PKSC12_FILE}" -clcerts -nokeys -out certificate.crt --passin "pass:${APPLE_DEVELOPER_ID_BUNDLE_PASSWORD}"
-  security verify-cert -k "${KEYCHAIN}" -c certificate.crt
+  openssl pkcs12 -in "${PKSC12_FILE}" -clcerts -nokeys -out "$SIGNING_TEMP_DIR/certificate.crt" --passin "pass:${APPLE_DEVELOPER_ID_BUNDLE_PASSWORD}"
+  security verify-cert -k "${KEYCHAIN}" -c "$SIGNING_TEMP_DIR/certificate.crt"
 else
   security verify-cert -k "${KEYCHAIN}" -c "${PKSC12_FILE}"
 fi
@@ -72,14 +82,13 @@ for f in \
     escript \
     heart \
     inet_gethost \
-    libmsquic*.dylib \
-    libquicer_nif*.dylib \
+    'libmsquic*.dylib' \
+    'libquicer_nif*.dylib' \
     libquicer_nif.so \
     otp_test_engine.so \
     run_erl \
     to_erl \
     ; do
-    find "${RELX_TEMP_DIR}" -name "$f" -exec codesign -s "${APPLE_DEVELOPER_IDENTITY}" -f --verbose=4 --timestamp --options=runtime {} \;
+    # Only sign files, and propagate codesign failures through find's exit status.
+    find "${RELX_TEMP_DIR}" -type f -name "$f" -exec codesign -s "${APPLE_DEVELOPER_IDENTITY}" -f --verbose=4 --timestamp --options=runtime {} +
 done
-
-cleanup
