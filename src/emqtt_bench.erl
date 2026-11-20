@@ -910,7 +910,7 @@ publish(Client, Opts) ->
     NewPayload = maybe_prefix_payload(Payload, Opts),
     case emqtt:publish(Client, topic_opt(Opts), NewPayload, Flags) of
         ok ->
-            inc_counter(Prometheus, pub),
+            %% QoS 0 publications are counted by loop/5.
             ok;
         {ok, #{reason_code := ?RC_NO_MATCHING_SUBSCRIBERS}} ->
             inc_counter(Prometheus, pub_nosub),
